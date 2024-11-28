@@ -43,6 +43,9 @@ Arguments cons {_}.
 
 (** Some list utilities *)
 
+Fact cons_inj X (x y : X) l m : x::l = y::m → x = y ∧ l = m.
+Proof. now inversion 1. Qed.
+
 (* Cutting a list in half given a split of its length *)
 Fact list_length_split X (m : list X) a b : ⌊m⌋ = a+b → { l : _ & { r | m = l++r ∧ ⌊l⌋ = a ∧ ⌊r⌋ = b } }.
 Proof.
@@ -724,6 +727,36 @@ Section FAN_cover.
 
 End FAN_cover.
 
+(** prefixes of sequences *)
+
+Definition pfx {X} (α : nat → X) :=
+  fix loop n :=
+    match n with
+    | 0   => []
+    | S n => α n :: loop n
+    end.
+
+Fact pfx_length X (α : nat → X) n : ⌊pfx α n⌋ = n.
+Proof. induction n; simpl; auto. Qed.
+
+Fact pfx_split X (α : nat → X) n l m :
+    l++m = pfx α n
+  → l = pfx (λ i, α (i+⌊m⌋)) ⌊l⌋
+  ∧ m = pfx α ⌊m⌋.
+Proof.
+  induction n as [ | n IHn ] in α, l |- *; simpl.
+  + now intros (-> & ->)%app_eq_nil; simpl.
+  + destruct l as [ | x l ]; simpl.
+    * intros ->; simpl.
+      now rewrite pfx_length.
+    * intros (-> & H)%cons_inj.
+      destruct IHn with (1 := H) as (-> & ->).
+      apply f_equal with (f := @length _) in H.
+      rewrite !pfx_length in *.
+      split; auto; repeat f_equal.
+      subst; now rewrite app_length.
+Qed.
+
 (** the extends relation between lists *)
 
 Inductive extends {X} l : list X → Prop :=
@@ -747,13 +780,6 @@ Proof.
 Qed.
 
 (* extends-sequences are sequences of n-prefixes *)
-
-Definition pfx {X} (ρ : nat → X) :=
-  fix loop n :=
-    match n with
-    | 0   => []
-    | S n => ρ n :: loop n
-    end.
 
 Fact hd_extends {X l m} : extends l m → { x : X | m = x::l }.
 Proof.
@@ -861,7 +887,6 @@ Section bar.
 
 End bar.
 
-Arguments extends {_}.
 Arguments bar {_}.
 
 #[local] Hint Constructors bar : core.
@@ -1545,6 +1570,18 @@ Proof.
     simpl; eauto.
 Qed.
 
+Fact good_pfx_inv X (R : rel₂ X) α n : good R (pfx α n) → ∃ i j, i < j ∧ R (α i) (α j).
+Proof.
+  intros (l & x & m & y & r & E & ?).
+  symmetry in E.
+  apply pfx_split in E as (E1 & E2); simpl in E2.
+  apply cons_inj in E2 as (-> & E2).
+  apply pfx_split in E2 as (E2 & E3); simpl in E3.
+  apply cons_inj in E3 as (-> & E3).
+  exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
+  rewrite app_length; simpl; lia.
+Qed.
+
 Notation "R ↑ u" := (λ x y, R x y ∨ R u x) (at level 1, left associativity, format "R ↑ u").
 
 Inductive af {X} (R : rel₂ X) : Prop :=
@@ -1571,6 +1608,13 @@ Proof.
     exists [], y, [], x, []; auto.
   + constructor 2.
     intro; now apply bar_good_lift with (p := []).
+Qed.
+
+Lemma af_sequences X (R : rel₂ X) : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
+Proof.
+  intros ?%af__bar_good_nil α.
+  destruct (bar_sequences H α) as (n & Hn).
+  apply good_pfx_inv with (1 := Hn).
 Qed.
 
 Section af.
