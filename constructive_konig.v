@@ -37,7 +37,7 @@ Arguments cons {_}.
 #[local] Notation "R ⁻¹" := (λ x y, R y x) (at level 1, left associativity, format "R ⁻¹").
 
 (* Usual hints for membership and permutations *)
-#[local] Hint Resolve in_eq in_cons incl_refl incl_tl : core.
+#[local] Hint Resolve in_eq in_cons in_or_app incl_refl incl_tl : core.
 #[local] Hint Constructors Permutation : core.
 #[local] Hint Resolve Permutation_middle Permutation_cons_app Permutation_in Permutation_sym : core.
 
@@ -45,6 +45,9 @@ Arguments cons {_}.
 
 Fact cons_inj X (x y : X) l m : x::l = y::m → x = y ∧ l = m.
 Proof. now inversion 1. Qed.
+
+Fact list_rev_forall X (P : list X → Prop) : (∀l, P (rev l)) → ∀l, P l.
+Proof. intros ? ?; rewrite <- rev_involutive; auto. Qed.
 
 (* Cutting a list in half given a split of its length *)
 Fact list_length_split X (m : list X) a b : ⌊m⌋ = a+b → { l : _ & { r | m = l++r ∧ ⌊l⌋ = a ∧ ⌊r⌋ = b } }.
@@ -91,6 +94,29 @@ Proof. inversion 1; eauto. Qed.
 
 Fact Forall2_cons_right_inv X Y (R : X → Y → Prop) l y m : ⋀₂R l (y::m) → ∃ x l', l = x::l' ∧ R x y ∧ ⋀₂R l' m.
 Proof. inversion 1; eauto. Qed.
+
+Fact Forall2_cons_iff X Y (R : X → Y → Prop) l m x y : ⋀₂R (x::l) (y::m) ↔ R x y ∧ ⋀₂R l m.
+Proof.
+  split.
+  + now inversion 1.
+  + intros []; eauto.
+Qed.
+
+(* Forall2 and rev *)
+
+Local Fact Forall2__Forall2_rev X Y (R : X → Y → Prop) l m : ⋀₂R l m → ⋀₂R (rev l) (rev m).
+Proof.
+  induction 1; simpl; auto.
+  apply Forall2_app; auto.
+Qed.
+
+Fact Forall2_rev_iff X Y (R : X → Y → Prop) l m : ⋀₂R l m ↔ ⋀₂R (rev l) (rev m).
+Proof.
+  split.
+  + apply Forall2__Forall2_rev.
+  + intros ?%Forall2__Forall2_rev.
+    now rewrite !rev_involutive in H.
+Qed.
 
 (* Weak binary choice for lists *)
 
@@ -729,33 +755,54 @@ End FAN_cover.
 
 (** prefixes of sequences *)
 
-Definition pfx {X} (α : nat → X) :=
-  fix loop n :=
-    match n with
-    | 0   => []
-    | S n => α n :: loop n
-    end.
+Section pfx.
 
-Fact pfx_length X (α : nat → X) n : ⌊pfx α n⌋ = n.
-Proof. induction n; simpl; auto. Qed.
+  Variables (X : Type).
 
-Fact pfx_split X (α : nat → X) n l m :
-    l++m = pfx α n
-  → l = pfx (λ i, α (i+⌊m⌋)) ⌊l⌋
-  ∧ m = pfx α ⌊m⌋.
-Proof.
-  induction n as [ | n IHn ] in α, l |- *; simpl.
-  + now intros (-> & ->)%app_eq_nil; simpl.
-  + destruct l as [ | x l ]; simpl.
-    * intros ->; simpl.
-      now rewrite pfx_length.
-    * intros (-> & H)%cons_inj.
-      destruct IHn with (1 := H) as (-> & ->).
-      apply f_equal with (f := @length _) in H.
-      rewrite !pfx_length in *.
-      split; auto; repeat f_equal.
-      subst; now rewrite app_length.
-Qed.
+  Implicit Type (α : nat → X).
+
+  Definition pfx α :=
+    fix loop n :=
+      match n with
+      | 0   => []
+      | S n => α n :: loop n
+      end.
+
+  Fact pfx_length α n : ⌊pfx α n⌋ = n.
+  Proof. induction n; simpl; auto. Qed.
+
+  Fact pfx_add α n m : pfx α (n+m) = pfx (λ i, α (i+m)) n ++ pfx α m.
+  Proof. now induction n; simpl; f_equal. Qed.
+
+  Fact pfx_ext α β n : (∀ i : nat, i < n → α i = β i) → pfx α n = pfx β n.
+  Proof. induction n; intro; simpl; f_equal; auto. Qed.
+
+  Fact pfx_S α n : pfx α (S n) = pfx (λ i, α (1+i)) n ++ [α 0].
+  Proof.
+    replace (S n) with (n+1) by lia.
+    rewrite pfx_add; f_equal; auto.
+    apply pfx_ext; intros ? _; f_equal; lia.
+  Qed.
+
+  Fact pfx_split α n l m :
+      l++m = pfx α n
+    → l = pfx (λ i, α (i+⌊m⌋)) ⌊l⌋
+    ∧ m = pfx α ⌊m⌋.
+  Proof.
+    induction n as [ | n IHn ] in α, l |- *; simpl.
+    + now intros (-> & ->)%app_eq_nil; simpl.
+    + destruct l as [ | x l ]; simpl.
+      * intros ->; simpl.
+        now rewrite pfx_length.
+      * intros (-> & H)%cons_inj.
+        destruct IHn with (1 := H) as (-> & ->).
+        apply f_equal with (f := @length _) in H.
+        rewrite !pfx_length in *.
+        split; auto; repeat f_equal.
+        subst; now rewrite app_length.
+  Qed.
+
+End pfx.
 
 (** the extends relation between lists *)
 
@@ -890,6 +937,21 @@ End bar.
 Arguments bar {_}.
 
 #[local] Hint Constructors bar : core.
+
+Section bar_morphism.
+
+  Variables (X Y : Type) (P : rel₁ (list X)) (Q : rel₁ (list Y))
+            (f : Y → X) (Hf : ∀l, P (map f l) → Q l).
+
+  Lemma bar_morphism l m : m = map f l → bar P m → bar Q l.
+  Proof. 
+    intro.
+    rewrite !bar_iff_cover_extends.
+    apply cover_morphism with (f := map f); auto.
+    induction 1; simpl; auto.
+  Qed.
+
+End bar_morphism.
 
 (** The notion of finiteness defined as listability *)
 
@@ -1552,72 +1614,211 @@ Check konig_bar.
 
 (** Conclude with almost full relations and irredundant sequences *)
 
-(* FO characterization of good, there is an equivalent inductive one
-   irred stands for irredundant *) 
-Definition good {X} (R : rel₂ X) p := ∃ l x m y r, p = l++x::m++y::r ∧ R y x.
-Definition irred {X} (R : rel₂ X) p := ∀ l x m y r, p = l++x::m++y::r → R x y → False.
+Section good_irred.
 
-(* irredundant lists are (reversed) bad lists *)
-Fact not_good_iff_irred X R (p : list X) : ¬ good R (rev p) ↔ irred R p.
-Proof.
-  unfold good, irred; split.
-  + intros H l x m y r ? ?; apply H; exists (rev r), y, (rev m), x, (rev l).
-    subst; repeat (rewrite rev_app_distr; simpl); repeat rewrite <- app_assoc; auto.
-  + intros H (l & x & m & y & r & H1%(f_equal (@rev _)) & H2).
-    revert H1.
-    rewrite rev_involutive.
-    repeat (rewrite rev_app_distr; simpl); repeat rewrite <- app_assoc.
-    simpl; eauto.
-Qed.
+  (* FO characterization of good, there is an equivalent inductive one
+     irred stands for irredundant *) 
 
-Fact good_pfx_inv X (R : rel₂ X) α n : good R (pfx α n) → ∃ i j, i < j ∧ R (α i) (α j).
-Proof.
-  intros (l & x & m & y & r & E & ?).
-  symmetry in E.
-  apply pfx_split in E as (E1 & E2); simpl in E2.
-  apply cons_inj in E2 as (-> & E2).
-  apply pfx_split in E2 as (E2 & E3); simpl in E3.
-  apply cons_inj in E3 as (-> & E3).
-  exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
-  rewrite app_length; simpl; lia.
-Qed.
+  Variable (X : Type).
+
+  Implicit Type (R : rel₂ X).
+
+  Definition good R p := ∃ l x m y r, p = l++x::m++y::r ∧ R y x.
+  Definition irred R p := ∀ l x m y r, p = l++x::m++y::r → R x y → False.
+
+  Fact good_monotone R x p : good R p → good R (x::p).
+  Proof. intros (l & u & m & v & r & -> & ?); exists (x::l), u, m, v, r; auto. Qed.
+
+  Hint Resolve good_monotone : core.
+
+  Fact good_app_left R l m : good R m → good R (l++m).
+  Proof. induction l; simpl; eauto. Qed.
+
+  Fact good_pfx_inv R α n : good R (pfx α n) → ∃ i j, i < j ∧ R (α i) (α j).
+  Proof.
+    intros (l & x & m & y & r & E & ?).
+    symmetry in E.
+    apply pfx_split in E as (E1 & E2); simpl in E2.
+    apply cons_inj in E2 as (-> & E2).
+    apply pfx_split in E2 as (E2 & E3); simpl in E3.
+    apply cons_inj in E3 as (-> & E3).
+    exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
+    rewrite app_length; simpl; lia.
+  Qed.
+
+  (* irredundant lists are (reversed) bad lists *)
+  Fact not_good_iff_irred R p : ¬ good R (rev p) ↔ irred R p.
+  Proof.
+    unfold good, irred; split.
+    + intros H l x m y r ? ?; apply H; exists (rev r), y, (rev m), x, (rev l).
+      subst; repeat (rewrite rev_app_distr; simpl); repeat rewrite <- app_assoc; auto.
+    + intros H (l & x & m & y & r & H1%(f_equal (@rev _)) & H2).
+      revert H1.
+      rewrite rev_involutive.
+      repeat (rewrite rev_app_distr; simpl); repeat rewrite <- app_assoc.
+      simpl; eauto.
+  Qed.
+
+End good_irred.
+
+Arguments good {X}.
+Arguments irred {X}.
 
 Notation "R ↑ u" := (λ x y, R x y ∨ R u x) (at level 1, left associativity, format "R ↑ u").
+
+Definition list_lift {X} :=
+  fix loop R (l : list X) :=
+    match l with
+    | []   => R
+    | u::l => (loop R l)↑u
+    end.
+
+Notation "R ⇈ l" := (list_lift R l) (at level 1, left associativity, format "R ⇈ l").
+
+Section good_bar.
+
+  Variable X : Type.
+
+  Implicit Types (R T : rel₂ X) (l : list X).
+
+  Fact lift_mono R T x : R ⊆₂ T → R↑x ⊆₂ T↑x.
+  Proof. firstorder. Qed.
+
+  Fact list_lift_app R l m : R⇈(l++m) = R⇈m⇈l.
+  Proof. induction l as [ | ? ? IH ]; simpl; auto; now rewrite IH. Qed.
+
+  Fact list_lift_incr R l : R ⊆₂ R⇈l.
+  Proof. induction l; simpl; auto. Qed.
+
+  Hint Resolve lift_mono list_lift_incr : core.
+
+  Fact list_lift_mono R T l : R ⊆₂ T → R⇈l ⊆₂ T⇈l.
+  Proof. induction l; simpl; auto; firstorder. Qed.
+
+  Fact In_list_lift R x y l : R y x → y ∈ l → ∀z, R⇈l x z.
+  Proof.
+    intros H1 H2; induction l; simpl in H2 |- *; intros z; try tauto.
+    destruct H2 as [ <- | ]; auto.
+  Qed.
+
+  Fact good_lift R u p : good R↑u p → good R (p++[u]).
+  Proof.
+    intros (l & x & m & y & r & -> & []);
+      repeat (rewrite <- app_assoc; simpl).
+    + exists l, x, m, y, (r++[u]); auto.
+    + exists (l++x::m), y, r, u, [].
+      now repeat (rewrite <- app_assoc; simpl).
+  Qed.
+
+  Hint Resolve good_lift : core.
+
+  Fact good_list_lift R l p : good R⇈l p → good R (p++l).
+  Proof.
+    induction l as [ | u l IH ] in p |- *; simpl.
+    + now rewrite app_nil_r.
+    + intros H%good_lift%IH; revert H.
+      now rewrite app_ass.
+  Qed.
+
+  (** The generalization is bar (good R↑xₙ...↑x₁) p → bar (good R) (p++[x₁;...;xₙ]) *)
+  Lemma bar_good_lift R p u : bar (good R↑u) p → bar (good R) (p++[u]).
+  Proof. induction 1; eauto. Qed.
+
+End good_bar. 
 
 Inductive af {X} (R : rel₂ X) : Prop :=
   | af_full : (∀ x y, R x y) → af R
   | af_lift : (∀u, af R↑u) → af R.
 
-(** The generalization is bar (good R↑xₙ...↑x₁) p → bar (good R) (p++[x₁;...;xₙ]) *)
-Lemma bar_good_lift X R p (u : X) : bar (good R↑u) p → bar (good R) (p++[u]).
+#[local] Hint Constructors af : core.
+
+Fact af_mono X (R T : rel₂ X) : R ⊆₂ T → af R → af T.
 Proof.
-  induction 1 as [ p Hp | ].
-  + destruct Hp as (l & x & m & y & r & -> & []);
-      constructor 1; repeat (rewrite <- app_assoc; simpl).
-    * exists l, x, m, y, (r++[u]); auto.
-    * exists (l++x::m), y, r, u, []; split; auto.
-      now repeat (rewrite <- app_assoc; simpl).
-  + now constructor 2.
+  intros H1 H2; revert H2 T H1; induction 1 as [ | R HR IHR ]; eauto.
+  constructor 2; intros u; apply IHR with u; firstorder.
 Qed.
 
-(** The generalization is af R↑xₙ...↑x₁ ↔ bar (good R) [x₁;...;xₙ] *)
-Lemma af__bar_good_nil X (R : rel₂ X) : af R → bar (good R) [].
-Proof.
-  induction 1.
-  + constructor 2; intros x; constructor 2; intros y; constructor 1.
-    exists [], y, [], x, []; auto.
-  + constructor 2.
-    intro; now apply bar_good_lift with (p := []).
-Qed.
+Fact af_comap X Y (f : Y → X) (R : rel₂ X) : af R → af (λ u v, R (f u) (f v)).
+Proof. induction 1; eauto. Qed.
 
-Lemma af_sequences X (R : rel₂ X) : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
-Proof.
-  intros ?%af__bar_good_nil α.
-  destruct (bar_sequences H α) as (n & Hn).
-  apply good_pfx_inv with (1 := Hn).
-Qed.
+Section af_extra.
 
-Section af.
+  Variable X : Type.
+
+  Implicit Types (R T : rel₂ X) (l : list X).
+
+  Lemma bar_good__af_list_lift R l : bar (good R) l → af R⇈l.
+  Proof.
+    induction 1 as [ l Hl | l Hl IHl ]; eauto.
+    constructor 1; intros u v.
+    destruct Hl as (l' & x & m & y & r & -> & ?).
+    rewrite list_lift_app.
+    apply list_lift_incr.
+    right.
+    apply In_list_lift with (1 := H); eauto.
+  Qed.
+
+  Local Lemma af__bar_good R : af R → ∀ l T, R ⊆₂ T⇈l → bar (good T) l.
+  Proof.
+    induction 1 as [ R HR | R HR IHR ].
+    + intros.
+      constructor 2; intros x.
+      constructor 2; intros y.
+      constructor 1.
+      change (y::x::l) with ([y;x]++l).
+      apply good_list_lift.
+      exists [],y,[],x,[]; auto.
+    + intros l T HT.
+      constructor 2; intros u.
+      apply IHR with u.
+      intros ? ? []; simpl; eauto.
+  Qed.
+
+  Lemma af_list_lift__bar_good R l : af R⇈l → bar (good R) l.
+  Proof. intros H; apply af__bar_good with (1 := H); auto. Qed.
+
+  Hint Resolve bar_good__af_list_lift af_list_lift__bar_good : core.
+
+  (** This is R↑xₙ...↑x₁ ↔ bar (good R) [x₁;...;xₙ] *)
+  Theorem af_lift_iff_bar_good R l : af R⇈l ↔ bar (good R) l.
+  Proof. split; eauto. Qed.
+
+  Corollary af_iff_bar_good_nil R : af R ↔ bar (good R) [].
+  Proof. apply af_lift_iff_bar_good with (l := []). Qed.
+
+  Lemma af_sequences R : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
+  Proof.
+    intros ?%af_iff_bar_good_nil α.
+    destruct (bar_sequences H α) as (n & Hn).
+    apply good_pfx_inv with (1 := Hn).
+  Qed.
+
+  Inductive rel_option R : rel₂ (option X) :=
+    | rel_option_None : rel_option R None None
+    | rel_option_Some u v : R u v → rel_option R (Some u) (Some v).
+
+  Hint Constructors rel_option : core.
+
+  Theorem af_rel_option R : af R → af (rel_option R).
+  Proof.
+    induction 1 as [ R HR | R HR IHR ].
+    + do 2 (constructor 2; intros []); constructor 1; intros [] []; eauto.
+    + constructor 2; intros [ u | ].
+      * generalize (IHR u).
+        apply af_mono.
+        induction 1 as [ | ? ? [] ]; eauto.
+      * constructor 2; intros [ v | ].
+        - generalize (IHR v).
+          apply af_mono.
+          induction 1 as [ | ? ? [] ]; eauto.
+        - eauto.
+  Qed.
+
+End af_extra.
+
+Arguments rel_option {_}.
+
+Section konig_af.
 
   (** Given an AF relation R and a finitely branching relation T
       the R-irredundant sequences of T form are representable 
@@ -1633,14 +1834,102 @@ Section af.
       with (T := T) (P := good R) (x := x)
       as (t & H1 & H2); auto.
     + intros y ? (l & u & m & v & r & -> & ?); exists (y::l), u, m, v, r; auto.
-    + now apply af__bar_good_nil.
+    + now apply af_iff_bar_good_nil.
     + exists t; split; auto.
       intros ? ? ?; now apply H2, not_good_iff_irred.
   Qed.
 
-End af.
+End konig_af.
 
-Check konig_af.
+Section choice_list.
+
+  Variable (X : Type).
+
+  Implicit Type (P : nat → rel₁ X).
+
+  Fixpoint choice_list P l :=
+    match l with 
+    | []   => True
+    | x::l => P 0 x ∧ choice_list (λ n, P (1+n)) l
+    end.
+
+  Fact choice_list_app P l m : choice_list P (l++m) ↔ choice_list P l ∧ choice_list (λ n, P (⌊l⌋+n)) m.
+  Proof.
+    induction l as [ | x l IHl ] in P |- *; simpl; try easy.
+    rewrite IHl; tauto.
+  Qed.
+
+  Fact choice_list_snoc P l x :  choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
+  Proof.
+    rewrite choice_list_app; simpl.
+    rewrite Nat.add_0_r; tauto.
+  Qed.
+
+End choice_list.
+
+Fact double_choice_list X Y (P : nat → rel₁ X) (Q : nat → rel₁ Y) (R : X → Y → Prop) :
+    (∀n x y, P n x → Q n y → R x y)
+  → ∀ l m, ⌊l⌋ = ⌊m⌋ → choice_list P l → choice_list Q m → ⋀₂R l m.
+Proof.
+  intros H l; revert P Q H.
+  induction l as [ | x l IH ]; intros P Q H [ | y m ]; simpl; try easy.
+  intros E; injection E; clear E; intros E.
+  intros (H1 & H2) (H3 & H4); constructor; eauto.
+  revert H2 H4; apply IH with (P := λ n, P (1+n)) (Q := λ n, Q (1+n)); eauto.
+Qed.
+
+Section af_konig_choice.
+
+  Variables (X : Type) (R : rel₂ X) (afR : af R)
+            (P : nat → rel₁ X) (finP : ∀n, finite (P n)).
+
+  (* We apply the FAN theorem for bars *)
+  Local Lemma bar_good_FAN : bar (λ lc, FAN lc ⊆₁ good R) [].
+  Proof.
+    apply FAN_bar.
+    + apply good_monotone.
+    + now apply af_iff_bar_good_nil.
+  Qed.
+
+  (* support n l if l is a supporting list for P n *)
+  Let support n l := ∀x, P n x ↔ x ∈ l.
+
+  Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
+  Proof.
+    destruct (bar_negative bar_good_FAN)
+      with (Q := λ lc, choice_list support (rev lc))
+      as (lc & H1 & H2).
+    + now simpl.
+    + intros l Hl.
+      destruct (finP ⌊l⌋) as (lc & Hlc).
+      exists lc; simpl.
+      rewrite choice_list_snoc, rev_length; auto.
+    + exists ⌊lc⌋.
+      intros l; pattern l; revert l; apply list_rev_forall.
+      intros l.
+      rewrite rev_involutive, rev_length.
+      intros H3 H4.
+      apply H1, Forall2_rev_iff; clear H1.
+      revert H3 H2; apply double_choice_list.
+      * intros n x y H1 H2; now apply H2.
+      * now rewrite !rev_length.
+  Qed.
+
+  Theorem af_konig_choice : ∃n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
+  Proof.
+    destruct good_uniform_over_FAN as (n & Hn).
+    exists n; intros l H1 H2%not_good_iff_irred.
+    destruct (le_lt_dec n ⌊l⌋) as [ H | ]; auto.
+    destruct H2.
+    destruct (list_length_split l n (⌊l⌋-n)) as (l1 & l2 & -> & E & _); try lia.
+    apply choice_list_app in H1 as (H1 & _).
+    rewrite rev_app_distr.
+    apply good_app_left; eauto.
+  Qed.
+
+End af_konig_choice.
+
+Check af_konig_choice.
 
 
 
