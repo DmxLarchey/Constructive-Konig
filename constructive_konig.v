@@ -55,7 +55,7 @@ Proof.
   intros E.
   exists (firstn a m), (skipn a m); split.
   + now rewrite firstn_skipn.
-  + rewrite firstn_length_le, length_skipn; lia. 
+  + rewrite firstn_length_le, skipn_length; lia. 
 Qed.
 
 (* Finite reification of an existential quantifier *)
@@ -102,6 +102,10 @@ Proof.
   + intros []; eauto.
 Qed.
 
+(* Forall2 swap *)
+Fact Forall2_swap X Y (R : X → Y → Prop) l m : ⋀₂R l m ↔ ⋀₂(R⁻¹) m l.
+Proof. split; induction 1; eauto. Qed.
+
 (* Forall2 and rev *)
 
 Local Fact Forall2__Forall2_rev X Y (R : X → Y → Prop) l m : ⋀₂R l m → ⋀₂R (rev l) (rev m).
@@ -116,6 +120,16 @@ Proof.
   + apply Forall2__Forall2_rev.
   + intros ?%Forall2__Forall2_rev.
     now rewrite !rev_involutive in H.
+Qed.
+
+(* Forall2 composition *) 
+
+Fact Forall2_compose {X Y Z} {R : X → Y → Prop} {T : Y → Z → Prop} {l m p} :
+    ⋀₂R l m → ⋀₂T m p → ⋀₂(λ x z, ∃y, R x y ∧ T y z) l p.
+Proof.
+  induction 1 as [ | x y l m H1 H2 IH2 ] in p |- *.
+  + intros ->%Forall2_nil_left_inv; auto.
+  + intros (? & ? & -> & [])%Forall2_cons_left_inv; eauto.
 Qed.
 
 (* Weak binary choice for lists *)
@@ -1614,6 +1628,8 @@ Check konig_bar.
 
 (** Conclude with almost full relations and irredundant sequences *)
 
+Notation "R ↑ u" := (λ x y, R x y ∨ R u x) (at level 1, left associativity, format "R ↑ u").
+
 Section good_irred.
 
   (* FO characterization of good, there is an equivalent inductive one
@@ -1634,6 +1650,7 @@ Section good_irred.
   Fact good_app_left R l m : good R m → good R (l++m).
   Proof. induction l; simpl; eauto. Qed.
 
+(*
   Fact good_pfx_inv R α n : good R (pfx α n) → ∃ i j, i < j ∧ R (α i) (α j).
   Proof.
     intros (l & x & m & y & r & E & ?).
@@ -1645,6 +1662,8 @@ Section good_irred.
     exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
     rewrite app_length; simpl; lia.
   Qed.
+
+*)
 
   (* irredundant lists are (reversed) bad lists *)
   Fact not_good_iff_irred R p : ¬ good R (rev p) ↔ irred R p.
@@ -1659,12 +1678,197 @@ Section good_irred.
       simpl; eauto.
   Qed.
 
+  Fact good_lift R u p : good R↑u p → good R (p++[u]).
+  Proof.
+    intros (l & x & m & y & r & -> & []);
+      repeat (rewrite <- app_assoc; simpl).
+    + exists l, x, m, y, (r++[u]); auto.
+    + exists (l++x::m), y, r, u, [].
+      now repeat (rewrite <- app_assoc; simpl).
+  Qed.
+
+  Hint Resolve good_lift : core.
+
+  (** The generalization is bar (good R↑xₙ...↑x₁) p → bar (good R) (p++[x₁;...;xₙ]) *)
+  Lemma bar_good_lift R p u : bar (good R↑u) p → bar (good R) (p++[u]).
+  Proof. induction 1; eauto. Qed.
+
 End good_irred.
 
 Arguments good {X}.
 Arguments irred {X}.
 
-Notation "R ↑ u" := (λ x y, R x y ∨ R u x) (at level 1, left associativity, format "R ↑ u").
+Section af.
+
+  Variables (X : Type).
+
+  Implicit Type (R : rel₂ X).
+
+  Inductive af R : Prop :=
+    | af_full : (∀ x y, R x y) → af R
+    | af_lift : (∀u, af R↑u) → af R.
+
+  Hint Constructors af : core.
+
+  Hint Resolve bar_good_lift : core.
+
+  Lemma af__bar_good_nil R : af R → bar (good R) [].
+  Proof.
+    induction 1; eauto.
+    + constructor 2; intro x.
+      constructor 2; intro y.
+      constructor 1.
+      exists [], y, [], x, []; auto.
+    + constructor 2; intro.
+      apply bar_good_lift with (p := []); auto.
+  Qed.
+
+End af.
+
+Arguments af {X}.
+
+#[local] Hint Constructors af : core.
+
+Section choice_list.
+
+  Variable (X : Type).
+
+  (** A fixpoint specification equivalent to
+
+       choice_list P [x₀;...;xₙ] = P 0 x₀ ∧ ... ∧ P n xₙ 
+
+      which is a generalization of Forall2, 
+      see choice_list_iff below. *)
+
+  Implicit Type (P : nat → rel₁ X).
+
+  Fixpoint choice_list P l :=
+    match l with 
+    | []   => True
+    | x::l => P 0 x ∧ choice_list (λ n, P (1+n)) l
+    end.
+
+  Fact choice_list_mono P Q : P ⊆₂ Q → choice_list P ⊆₁ choice_list Q.
+  Proof.
+    intros H l; revert P Q H.
+    induction l as [ | x l IHl ]; intros P Q H; simpl; auto.
+    intros (? & HP); split; auto.
+    revert HP; apply IHl; auto.
+  Qed.
+
+  Fact choice_list_app P l m : choice_list P (l++m) ↔ choice_list P l ∧ choice_list (λ n, P (⌊l⌋+n)) m.
+  Proof.
+    induction l as [ | x l IHl ] in P |- *; simpl; try easy.
+    rewrite IHl; tauto.
+  Qed.
+
+  Fact choice_list_snoc P l x :  choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
+  Proof.
+    rewrite choice_list_app; simpl.
+    rewrite Nat.add_0_r; tauto.
+  Qed.
+
+  (* Computes the list [0+a;...;n-1+a] *)
+  Fixpoint list_an a n :=
+    match n with
+    | 0   => []
+    | S n => a :: list_an (1+a) n
+    end.
+
+  (* Computes the list [0;...;n-1] *)
+  Definition list_n := list_an 0.
+
+  Lemma choice_list_charac P l a : choice_list (λ n, P (a+n)) l ↔ ⋀₂P (list_an a ⌊l⌋) l.
+  Proof.
+    induction l as [ | x l IHl ] in a |- *; simpl.
+    + split; auto.
+    + rewrite Forall2_cons_iff.
+      rewrite Nat.add_0_r.
+      apply and_iff_compat_l.
+      rewrite <- IHl.
+      split; apply choice_list_mono.
+      all: intros ? ?; rewrite Nat.add_succ_r; auto.
+  Qed.
+
+  Corollary choice_list_iff P l : choice_list P l ↔ ⋀₂P (list_n ⌊l⌋) l.
+  Proof. apply choice_list_charac with (a := 0). Qed.
+
+End choice_list.
+
+Fact double_choice_list X Y (P : nat → rel₁ X) (Q : nat → rel₁ Y) (R : X → Y → Prop) :
+    (∀n x y, P n x → Q n y → R x y)
+  → ∀ l m, ⌊l⌋ = ⌊m⌋ → choice_list P l → choice_list Q m → ⋀₂R l m.
+Proof.
+  intros H l m E H1%choice_list_iff%Forall2_swap H2%choice_list_iff.
+  rewrite E in H1.
+  generalize (Forall2_compose H1 H2).
+  apply Forall2_impl.
+  intros ?  ? (? & []); eauto.
+Qed.
+
+Section af_konig_choice.
+
+  Variables (X : Type) (R : rel₂ X) (afR : af R)
+            (P : nat → rel₁ X) (finP : ∀n, finite (P n)).
+
+  (* we apply the FAN theorem for bars *)
+  Local Lemma bar_good_FAN : bar (λ lc, FAN lc ⊆₁ good R) [].
+  Proof.
+    apply FAN_bar.
+    + apply good_monotone.
+    + now apply af__bar_good_nil.
+  Qed.
+
+  (* the support n l if l is a supporting list for P n,
+     ie support n are the lists l which witness 
+     that P n is finite *)
+  Let support n l := ∀x, P n x ↔ x ∈ l.
+
+  (* We use bar_negative apply to  bar (λ lc, FAN lc ⊆₁ good R) []
+     with Q := λ lc, choice_list support (rev lc), ie, 
+     lc is [lₙ;...;l₀] with lₙ support of P 0, ... l₀ support of P n 
+     Then Q meets λ lc, FAN lc ⊆₁ good R, ie there is a sequence lc
+     of supports for P 0, ... , P n such than any choice sequence
+     in those supports in good R. 
+
+     As a consequence, any choice list for P of length ⌊lc⌋ is good R *)
+  Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
+  Proof.
+    destruct (bar_negative bar_good_FAN)
+      with (Q := λ lc, choice_list support (rev lc))
+      as (lc & H1 & H2).
+    + now simpl.
+    + intros l Hl.
+      destruct (finP ⌊l⌋) as (lc & Hlc).
+      exists lc; simpl.
+      rewrite choice_list_snoc, rev_length; auto.
+    + exists ⌊lc⌋.
+      intros l; pattern l; revert l; apply list_rev_forall.
+      intros l.
+      rewrite rev_involutive, <- (rev_length lc).
+      intros H3 H4.
+      apply H1, Forall2_rev_iff; clear H1.
+      revert H3 H2; apply double_choice_list; auto.
+      intros n x y H1 H2; now apply H2.
+  Qed.
+
+  (* So good R is met uniformly at length n over choice lists for P,
+     irredundant choice lists must be shorter than n *) 
+  Theorem af_konig_choice : ∃n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
+  Proof.
+    destruct good_uniform_over_FAN as (n & Hn).
+    exists n; intros l H1 H2%not_good_iff_irred.
+    destruct (le_lt_dec n ⌊l⌋) as [ H | ]; auto.
+    destruct H2.
+    destruct (list_length_split l n (⌊l⌋-n)) as (l1 & l2 & -> & E & _); try lia.
+    apply choice_list_app in H1 as (H1 & _).
+    rewrite rev_app_distr.
+    apply good_app_left; eauto.
+  Qed.
+
+End af_konig_choice.
+
+Check af_konig_choice.
 
 Definition list_lift {X} :=
   fix loop R (l : list X) :=
@@ -1674,6 +1878,7 @@ Definition list_lift {X} :=
     end.
 
 Notation "R ⇈ l" := (list_lift R l) (at level 1, left associativity, format "R ⇈ l").
+
 
 Section good_bar.
 
@@ -1724,19 +1929,17 @@ Section good_bar.
   Lemma bar_good_lift R p u : bar (good R↑u) p → bar (good R) (p++[u]).
   Proof. induction 1; eauto. Qed.
 
-End good_bar. 
+End good_bar.
 
-Inductive af {X} (R : rel₂ X) : Prop :=
-  | af_full : (∀ x y, R x y) → af R
-  | af_lift : (∀u, af R↑u) → af R.
 
-#[local] Hint Constructors af : core.
 
 Fact af_mono X (R T : rel₂ X) : R ⊆₂ T → af R → af T.
 Proof.
   intros H1 H2; revert H2 T H1; induction 1 as [ | R HR IHR ]; eauto.
   constructor 2; intros u; apply IHR with u; firstorder.
 Qed.
+
+
 
 Fact af_comap X Y (f : Y → X) (R : rel₂ X) : af R → af (λ u v, R (f u) (f v)).
 Proof. induction 1; eauto. Qed.
@@ -1841,95 +2044,8 @@ Section konig_af.
 
 End konig_af.
 
-Section choice_list.
 
-  Variable (X : Type).
 
-  Implicit Type (P : nat → rel₁ X).
-
-  Fixpoint choice_list P l :=
-    match l with 
-    | []   => True
-    | x::l => P 0 x ∧ choice_list (λ n, P (1+n)) l
-    end.
-
-  Fact choice_list_app P l m : choice_list P (l++m) ↔ choice_list P l ∧ choice_list (λ n, P (⌊l⌋+n)) m.
-  Proof.
-    induction l as [ | x l IHl ] in P |- *; simpl; try easy.
-    rewrite IHl; tauto.
-  Qed.
-
-  Fact choice_list_snoc P l x :  choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
-  Proof.
-    rewrite choice_list_app; simpl.
-    rewrite Nat.add_0_r; tauto.
-  Qed.
-
-End choice_list.
-
-Fact double_choice_list X Y (P : nat → rel₁ X) (Q : nat → rel₁ Y) (R : X → Y → Prop) :
-    (∀n x y, P n x → Q n y → R x y)
-  → ∀ l m, ⌊l⌋ = ⌊m⌋ → choice_list P l → choice_list Q m → ⋀₂R l m.
-Proof.
-  intros H l; revert P Q H.
-  induction l as [ | x l IH ]; intros P Q H [ | y m ]; simpl; try easy.
-  intros E; injection E; clear E; intros E.
-  intros (H1 & H2) (H3 & H4); constructor; eauto.
-  revert H2 H4; apply IH with (P := λ n, P (1+n)) (Q := λ n, Q (1+n)); eauto.
-Qed.
-
-Section af_konig_choice.
-
-  Variables (X : Type) (R : rel₂ X) (afR : af R)
-            (P : nat → rel₁ X) (finP : ∀n, finite (P n)).
-
-  (* We apply the FAN theorem for bars *)
-  Local Lemma bar_good_FAN : bar (λ lc, FAN lc ⊆₁ good R) [].
-  Proof.
-    apply FAN_bar.
-    + apply good_monotone.
-    + now apply af_iff_bar_good_nil.
-  Qed.
-
-  (* support n l if l is a supporting list for P n *)
-  Let support n l := ∀x, P n x ↔ x ∈ l.
-
-  Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
-  Proof.
-    destruct (bar_negative bar_good_FAN)
-      with (Q := λ lc, choice_list support (rev lc))
-      as (lc & H1 & H2).
-    + now simpl.
-    + intros l Hl.
-      destruct (finP ⌊l⌋) as (lc & Hlc).
-      exists lc; simpl.
-      rewrite choice_list_snoc, rev_length; auto.
-    + exists ⌊lc⌋.
-      intros l; pattern l; revert l; apply list_rev_forall.
-      intros l.
-      rewrite rev_involutive, rev_length.
-      intros H3 H4.
-      apply H1, Forall2_rev_iff; clear H1.
-      revert H3 H2; apply double_choice_list.
-      * intros n x y H1 H2; now apply H2.
-      * now rewrite !rev_length.
-  Qed.
-
-  Theorem af_konig_choice : ∃n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
-  Proof.
-    destruct good_uniform_over_FAN as (n & Hn).
-    exists n; intros l H1 H2%not_good_iff_irred.
-    destruct (le_lt_dec n ⌊l⌋) as [ H | ]; auto.
-    destruct H2.
-    destruct (list_length_split l n (⌊l⌋-n)) as (l1 & l2 & -> & E & _); try lia.
-    apply choice_list_app in H1 as (H1 & _).
-    rewrite rev_app_distr.
-    apply good_app_left; eauto.
-  Qed.
-
-End af_konig_choice.
-
-Check af_konig_choice.
 
 
 
