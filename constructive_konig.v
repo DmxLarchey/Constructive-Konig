@@ -14,15 +14,6 @@ Import ListNotations.
 
 Set Implicit Arguments.
 
-Arguments In {_}.
-Arguments length {_}.
-Arguments cons {_}.
-
-(* Usual notation for length, membership and permutations *)
-#[local] Notation "⌊ l ⌋" := (length l) (at level 0, format "⌊ l ⌋").
-#[local] Notation "x ∈ l" := (In x l) (at level 70, no associativity, format "x  ∈  l").
-#[local] Notation "l ~ₚ m" := (@Permutation _ l m) (at level 70, no associativity, format "l  ~ₚ  m").
-
 (* Finitary conjunction over: ⋀₁P a list, or ⋀₂R a pair of lists *)
 #[local] Notation "⋀₁ P" := (Forall P) (at level 0, right associativity, format "⋀₁ P").
 #[local] Notation "⋀₂ R" :=(Forall2 R) (at level 0, right associativity, format "⋀₂ R").
@@ -36,6 +27,15 @@ Arguments cons {_}.
 #[local] Notation "R ⊆₂ T" := (∀ x y, R x y → T x y) (at level 70, no associativity, format "R  ⊆₂  T").
 #[local] Notation "R ⁻¹" := (λ x y, R y x) (at level 1, left associativity, format "R ⁻¹").
 
+Arguments In {_}.
+Arguments length {_}.
+Arguments cons {_}.
+
+(* Usual notation for length, membership and permutations *)
+#[local] Notation "⌊ l ⌋" := (length l) (at level 0, format "⌊ l ⌋").
+#[local] Notation "x ∈ l" := (In x l) (at level 70, no associativity, format "x  ∈  l").
+#[local] Notation "l ~ₚ m" := (@Permutation _ l m) (at level 70, no associativity, format "l  ~ₚ  m").
+
 (* Usual hints for membership and permutations *)
 #[local] Hint Resolve in_eq in_cons in_or_app incl_refl incl_tl : core.
 #[local] Hint Constructors Permutation : core.
@@ -45,6 +45,14 @@ Arguments cons {_}.
 
 Fact cons_inj X (x y : X) l m : x::l = y::m → x = y ∧ l = m.
 Proof. now inversion 1. Qed.
+
+Fact app_length_inj X (l₁ l₂ m₁ m₂ : list X) :
+    l₁++l₂ = m₁++m₂ → ⌊l₁⌋ = ⌊m₁⌋ → l₁ = m₁ ∧ l₂ = m₂.
+Proof.
+  revert m₁; induction l₁ as [ | x l₁ IH ]; intros [ | y m₁ ]; try easy; simpl.
+  intros (-> & ?)%cons_inj E.
+  destruct (IH m₁); try lia; subst; auto.
+Qed.
 
 Fact list_rev_forall X (P : list X → Prop) : (∀l, P (rev l)) → ∀l, P l.
 Proof. intros ? ?; rewrite <- rev_involutive; auto. Qed.
@@ -89,13 +97,16 @@ Proof. now inversion 1. Qed.
 Fact Forall2_nil_right_inv X Y (R : X → Y → Prop) l : ⋀₂R l [] → l = [].
 Proof. now inversion 1. Qed.
 
-Fact Forall2_cons_left_inv X Y (R : X → Y → Prop) x l m : ⋀₂R (x::l) m → ∃ y m', m = y::m' ∧ R x y ∧ ⋀₂R l m'.
+Fact Forall2_cons_left_inv X Y (R : X → Y → Prop) x l m : 
+    ⋀₂R (x::l) m → ∃ y m', m = y::m' ∧ R x y ∧ ⋀₂R l m'.
 Proof. inversion 1; eauto. Qed.
 
-Fact Forall2_cons_right_inv X Y (R : X → Y → Prop) l y m : ⋀₂R l (y::m) → ∃ x l', l = x::l' ∧ R x y ∧ ⋀₂R l' m.
+Fact Forall2_cons_right_inv X Y (R : X → Y → Prop) l y m :
+    ⋀₂R l (y::m) → ∃ x l', l = x::l' ∧ R x y ∧ ⋀₂R l' m.
 Proof. inversion 1; eauto. Qed.
 
-Fact Forall2_cons_iff X Y (R : X → Y → Prop) l m x y : ⋀₂R (x::l) (y::m) ↔ R x y ∧ ⋀₂R l m.
+Fact Forall2_cons_iff X Y (R : X → Y → Prop) l m x y : 
+    ⋀₂R (x::l) (y::m) ↔ R x y ∧ ⋀₂R l m.
 Proof.
   split.
   + now inversion 1.
@@ -132,8 +143,7 @@ Proof.
   + intros (? & ? & -> & [])%Forall2_cons_left_inv; eauto.
 Qed.
 
-(* Weak binary choice for lists *)
-
+(* Weak binary choice over finitely many elements *)
 Fact list_wchoose X (P Q : X → Prop) l :
     (∀x, x ∈ l → P x ∨ Q x)
   → (∃x, x ∈ l ∧ P x) ∨ ∀x, x ∈ l → Q x.
@@ -146,9 +156,12 @@ Proof.
       right; intros ? [ <- | ]; eauto.
 Qed.
 
+(* Weakly decidable proposition satisfy propositional XM *)
+Notation wdec P := (P ∨ ¬ P).
+
 (* Weak decidability of membership/∈ *)
 
-Fact list_in_wdec X (x : X) l : (∀y, y ∈ l → x = y ∨ x ≠ y) → x ∈ l ∨ ¬ x ∈ l.
+Fact list_in_wdec X (x : X) l : (∀y, y ∈ l → wdec (x = y)) → wdec (x ∈ l).
 Proof.
   induction l as [ | y l IHl ]; intros Hl.
   + right; now simpl.
@@ -174,14 +187,14 @@ Proof.
   + lia.
   + destruct (Nat.max_spec_le x (list_max l))
       as [ (_ & ->) | (_ & ->) ]; auto.
-Qed. 
+Qed.
 
 (** Recollection of De Morgan laws, exclusively used in one equivalence below to
     give an explanation of positive and negative characterizations of covers.
-    We do not import the Classical module to be precise on a which De Morgan law
+    We *DO NOT* import the Classical module to be precise on a which De Morgan law
     we actually use in this equivalence proof.
 
-    Notice that we keep excluded middle as a (local) assumption, ie we do not
+    Notice that we keep excluded middle (XM) as a (local) assumption, ie we do not
     declare it as an axiom so we can be precise in our claim that it is only
     needed to show that equivalence between the positive and negative
     characterization of covers. *)
@@ -195,7 +208,7 @@ Section De_Morgan_FO.
 
   (** These are intuitionistically valid *)
 
-  (* These two are congruence laws *)
+  (* Congruence laws *)
 
   Fact imp_iff_compat (A B C D : Prop) : (A ↔ C) → (B ↔ D) → (A → B) ↔ (C → D).
   Proof. tauto. Qed.
@@ -253,7 +266,7 @@ Section De_Morgan_FO.
       destruct (xm Q) as [ | []%H ]; trivial.
   Qed.
 
-  (* ¬ (P → Q) ↔ (P ∧ ¬ Q) but in negative position to avoid ∧ *)
+  (* ¬ (P → Q) ↔ (P ∧ ¬ Q) but in negative position to avoid the conjunction ∧ *)
   Fact not_imp_negative (P Q A : Prop) : (¬ (P → Q) → A) ↔ (¬ Q → P → A).
   Proof.
     split.
@@ -276,7 +289,7 @@ Section De_Morgan_FO.
 End De_Morgan_FO.
 
 (** Some basic results about Dependent Choice (DC), here in type theory.
-    In particular, we give a more convenient form to DC over a Σ-type *)
+    We give a more convenient form to DC over a Σ-type *)
 
 Section dependent_choice_sigma.
 
@@ -287,14 +300,14 @@ Section dependent_choice_sigma.
 
   (* Below is a specialization of Dependent Choice on a Σ-type 
 
-     If R is a total relation on { x | Q x } then there is a 
+     If R is a total relation on {x | Q x} then there is a 
      R-sequence starting from any point in Q. *)
 
   Definition DC_Σ {X} (Q : rel₁ X) :=
     ∀R, (∀x, Q x → ∃y, Q y ∧ R x y)
        → ∀x, Q x → ∃ρ, ρ 0 = x ∧ (∀n, Q (ρ n) ∧ R (ρ n) (ρ (S n))).
 
-  Theorem DC_sig__DC_Σ X (Q : rel₁ X) : DC {x | Q x} → DC_Σ Q.
+  Fact DC_sig__DC_Σ X (Q : rel₁ X) : DC {x | Q x} → DC_Σ Q.
   Proof.
     intros dc R HR x Hx.
     destruct dc
@@ -309,7 +322,7 @@ Section dependent_choice_sigma.
       * apply (proj2_sig _).
   Qed.
 
-  Theorem DC_Σ__DC X : DC_Σ (λ _ : X, True) → DC X.
+  Fact DC_Σ__DC X : DC_Σ (λ _ : X, True) → DC X.
   Proof.
     intros dc R HR x.
     destruct (dc R) with x as (ρ & H1 & H2); eauto.
@@ -326,7 +339,7 @@ Section dependent_choice_sigma.
 
 End dependent_choice_sigma.
 
-(** The three definitions of accessibility are the same:
+(** The three below definitions of accessibility are the same:
       - founded 
       - acc 
       - Acc
@@ -339,11 +352,17 @@ Inductive acc {X} (R : rel₂ X) x : Prop :=
 Fact acc_irrefl X (R : rel₂ X) x : acc R x → ¬ R x x.
 Proof. unfold not; induction 1; eauto. Qed.
 
+(** This is the notion "R-founded" defined in [SC], Definition 3.1 p 74
+
+    [SC] Claudio Sacerdoti Coen and Silvio Valentini. "General Recursion and Formal Topology." 
+         PAR-10. Partiality and Recursion in Interactive Theorem Provers, volume 5 of 
+         EPiC Series in Computing, pages 72–83. EasyChair, 2012. doi:10.29007/hl75. *)
+
 Inductive founded {X} (R : rel₂ X) x : Prop :=
   | founded_intro : ¬ R x x → (∀y, R x y → founded R y) → founded R x.
 
-(* This is Coq standard definition of Acc R with
-   uses the reversed relation as compared to acc R *)
+(* This is Coq standard definition of Acc R, part of the Init module 
+   which uses the reversed relation as compared to acc R *)
 
 Print Acc.
 
@@ -352,9 +371,6 @@ Section founded_vs_acc_vs_Acc.
   Variables (X : Type).
 
   Implicit Type (R : rel₂ X).
-
-  (* This is the notion defined in [SC] R-foundation
-     Definition 3.1 p 74 *)
 
   Hint Constructors acc founded Acc : core.
 
@@ -382,21 +398,6 @@ End founded_vs_acc_vs_Acc.
 Fact Forall_upclosed_perm X (P : rel₁ X) : upclosed (λ l m, l ~ₚ m) ⋀₁P.
 Proof. intros ? ?; rewrite !Forall_forall; eauto. Qed.
 
-Section upward_closure.
-
-  Variables (X : Type).
-
-  Implicit Types (T : rel₂ X) (P : rel₁ X).
-
-  Inductive upc T P : X → Prop :=
-    | upc_start x : P x → upc T P x
-    | upc_succ x y : T x y → upc T P x → upc T P y.
-
-  Fact upclosed_upc T P : upclosed T (upc T P).
-  Proof. apply upc_succ. Qed.
-
-End upward_closure.
-
 (**  The cover inductive predicate is given by two rules  *)
 
 Unset Elimination Schemes.
@@ -421,13 +422,13 @@ Section cover_ind.
             (T : rel₂ X)
             (P : rel₁ X)
             (Q : rel₁ X)
-            (HQ0 : P ⊆₁ Q)
-            (HQ1 : ∀y, T y ⊆₁ Q → Q y).
+            (Qs : P ⊆₁ Q)
+            (Qn : ∀y, T y ⊆₁ Q → Q y).
 
   Fixpoint cover_ind x (d : cover T P x) : Q x :=
     match d with
-    | cover_stop H => HQ0 H
-    | cover_next H => HQ1 (λ y hy, cover_ind (H _ hy))
+    | cover_stop p => Qs p
+    | cover_next n => Qn (λ y hy, cover_ind (n y hy))
     end.
 
 End cover_ind.
@@ -462,7 +463,7 @@ Section cover_extra.
 
   (* It preserves upward closed predicates *)
   Fact cover_upclosed T P : upclosed T P → upclosed T (cover T P).
-  Proof. intros ? ? y H2 H3; revert H3 y H2. induction 1; eauto. Qed.
+  Proof. intros ? ? y H2 H3; revert H3 y H2; induction 1; eauto. Qed.
 
   Fact cover_idempotent T P : cover T (cover T P) ⊆₁ cover T P.
   Proof. induction 1; eauto. Qed.
@@ -477,7 +478,7 @@ Section cover_extra.
   (* Positive characterization of cover T P x is ∀Q, cover_pos T P x Q *)
   Definition cover_pos T P x := λ Q, P ⊆₁ Q → (∀y, T y ⊆₁ Q → Q y) → Q x.
 
-  (* The negative "characterization" of cover T P x is ∀Q, cover_neg T P x Q 
+  (* The negative "characterization" of cover T P x is ∀Q, cover_neg T P x Q
 
      This characterization reads as: if a predicate Q is such that
        - Q contains x
@@ -485,30 +486,31 @@ Section cover_extra.
      then Q meets P *)
   Definition cover_neg T P x := λ Q, Q x → (∀y, Q y → ∃z, Q z ∧ T y z) → ∃y, P y ∧ Q y.
 
-  (* The positive characterization is just a reformulation of the 
-     native (auto generated) inductive principle cover_ind for bar T P x,
+  (* The positive characterization is just a reformulation 
+     of the inductive principle cover_ind for cover T P x,
      obtained by reordering the hypotheses. *)
   Fact cover_iff_cover_pos T P x : cover T P x ↔ ∀Q, cover_pos T P x Q.
   Proof.
     split.
-    + intros Hx Q HQ0 HQ1; revert T P Q HQ0 HQ1 x Hx; apply cover_ind.
+    + intros Hx Q HQ0 HQ1; revert X T P Q HQ0 HQ1 x Hx; exact cover_ind.
     + intros H; apply H; auto.
   Qed.
 
   (* The positive characterization implies the negative characterization
-     but not the converse; unless XM is assumed (see below). *)
+     but not the converse; unless XM is assumed (see below).
+     We use ∀Q, cover_pos T P x Q as an induction principle. *)
   Lemma cover_pos__cover_neg T P x : (∀Q, cover_pos T P x Q) → ∀Q, cover_neg T P x Q.
   Proof.
     unfold cover_neg.
     intros H.
-    apply H; eauto.
-    clear x H.
-    intros x IH Q H1 H2.
-    destruct (H2 _ H1) as (? & []); eauto.
+    apply H; clear x H.
+    + intros x; now exists x.
+    + intros x IH Q H1 H2.
+      destruct (H2 _ H1) as (? & []); eauto.
   Qed.
 
   Theorem cover_negative T P x : cover T P x → ∀Q, Q x → (∀y, Q y → ∃z, Q z ∧ T y z) → ∃y, P y ∧ Q y.
-  Proof. intro; now apply cover_pos__cover_neg, cover_iff_cover_pos. Qed.
+  Proof. rewrite cover_iff_cover_pos; apply cover_pos__cover_neg. Qed.
 
   Section cover_neg__cover_pos_DeMorgan.
 
@@ -517,7 +519,6 @@ Section cover_extra.
     (* cover_pos and cover_neg are De Morgan duals, ie they are equivalent under excluded middle.
        We give a proof that only uses first order De Morgan laws in addition to congruence laws,
        which serve as a mean to rewrite under quantifiers. *)
-
     Remark cover_pos_iff_neg_XM T P x Q : cover_pos T P x Q ↔ cover_neg T P x (λ x, ¬ Q x).
     Proof.
       unfold cover_pos, cover_neg.
@@ -548,15 +549,14 @@ Section cover_extra.
   End cover_neg__cover_pos_DeMorgan.
 
   (* The sequential "characterization" of cover T P x is ∀ρ, cover_seq T P x ρ.
-
      This reads as any T-sequence starting at x meets P *)
-  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (S n))) → ∃n, P (ρ n).
+  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃n, P (ρ n).
 
-  (* Since a T-sequence ρ starting at x gives a predicate Q := λ x, ∃n, x = ρ n such that
+  (* For a T-sequence ρ starting at x, its direct image 
+     Q := λ x, ∃n, x = ρ n, satisfies
        - Q contains x
        - Q is T-unstoppable
-     then Q meets P, hence ρ meets P *)
-
+     Hence Q meets P, which entails that ρ meets P *)
   Lemma cover_seq_direct_image T P x ρ : cover_neg T P x (λ x, ∃n, x = ρ n) → cover_seq T P x ρ.
   Proof. 
     intros H H1 H2.
@@ -567,10 +567,7 @@ Section cover_extra.
   Corollary cover_neg__cover_seq T P x : (∀Q, cover_neg T P x Q) → ∀ρ, cover_seq T P x ρ.
   Proof. intros H ρ; apply cover_seq_direct_image, H. Qed.
 
-  (* Since a sequence ρ : nat → X with T (ρ n) (ρ (S n)) is an infinite
-     T-sequence, hence the direct image Q := λ x, ∃n, x = ρ n of ρ is
-     makes T a total relation*)
-  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (S n))) → ∃n, P (ρ n).
+  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃n, P (ρ n).
   Proof. intro; apply cover_neg__cover_seq; unfold cover_neg; now apply cover_negative. Qed.
 
   Section cover_seq__cover_neg_Dependent_Choice.
@@ -628,9 +625,8 @@ End acc_instances.
 
 (** Finitary lifting of a binary relation to lists *)
 
-(* T† := fimage T is a way to interpret finitary FANs
-
-   fimage (for finitary image) is the lifting of T to lists (viewed as finite sets)
+(* fimage (for finitary image) is the lifting of T to lists (viewed as finite sets)
+   T† := fimage T is a way to interpret finitary FANs, defined as:
 
      T† l m if any member of m in a T-image of some member of l *)
 
@@ -644,27 +640,24 @@ Section finitary_image.
 
   Implicit Type (l : list X) (P : rel₁ X).
 
-  Fact fimage_incl l₁ l₂ m₁ m₂ : incl l₁ l₂ → incl m₂ m₁ → T† l₁ m₁ → T† l₂ m₂.
-  Proof. intros ? ? H y ?; destruct (H y) as (? & ? & ?); eauto. Qed.
+  Fact fimage_mono l₁ l₂ m₁ m₂ : incl l₁ l₂ → incl m₂ m₁ → T† l₁ m₁ → T† l₂ m₂.
+  Proof. intros ? ? H y ?; destruct (H y) as (? & []); eauto. Qed.
 
-  Fact fimage_cons_inv l y m : T† l (y::m) → T† l m.
-  Proof. apply fimage_incl; auto. Qed.
-
-  Fact fimage_in_inv l m : T† l m → ∀y, y ∈ m → T† l [y].
+  Fact fimage_in_r_inv l m : T† l m → ∀y, y ∈ m → T† l [y].
   Proof. intros ? ? ? ? [ <- | [] ]; eauto. Qed.
 
   Fact fimage_sg_inv x y : T† [x] [y] → T x y.
   Proof. intros H; destruct (H y) as (? & [ <- | [] ] & ?); auto. Qed.
 
-  Hint Resolve fimage_sg_inv fimage_in_inv : core.
-
   Fact fimage_sg_r l x y : T x y → x ∈ l → T† l [y].
   Proof. intros ? ? ? [ <- | [] ]; eauto. Qed.
 
-  Fact fimage_sg_inv_r x m : T† [x] m → ∀y, y ∈ m → T x y.
+  Hint Resolve fimage_sg_inv fimage_in_r_inv : core.
+
+  Fact fimage_sg_l_inv x m : T† [x] m → ∀y, y ∈ m → T x y.
   Proof. eauto. Qed.
 
-  Fact fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → ∃ m₁ m₂, m ~ₚ m₁++m₂ ∧ T† l₁ m₁ ∧ T† l₂ m₂.
+  Lemma fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → ∃ m₁ m₂, m ~ₚ m₁++m₂ ∧ T† l₁ m₁ ∧ T† l₂ m₂.
   Proof.
     induction m as [ | x m IHm ]; intros H1.
     + exists nil, nil; repeat split; auto; intros ? [].
@@ -690,8 +683,8 @@ End finitary_image.
 
 Section FAN_cover.
 
-  (** We give an original proof of a quite general formulation of the FAN theorem over
-      cover inductive predicates. *)
+  (** We give an original proof of a quite general formulation of 
+      the FAN theorem for cover inductive predicates. *)
 
   Variable (X : Type) (T : rel₂ X) (P : rel₁ X) (HP : upclosed T P).
 
@@ -718,7 +711,9 @@ Section FAN_cover.
   Corollary cover_fimage_Forall_cons x m : cover T† ⋀₁P [x] → cover T† ⋀₁P m → cover T† ⋀₁P (x::m).
   Proof. apply cover_fimage_union with (l := [_]). Qed.
 
-  Hint Resolve fimage_incl fimage_cons_inv fimage_in_inv cover_fimage_Forall_cons : core.
+  Hint Resolve fimage_mono
+               fimage_in_r_inv
+               cover_fimage_Forall_cons : core.
 
   Corollary cover_fimage_Forall l : (∀x, x ∈ l → cover T† ⋀₁P [x]) → cover T† ⋀₁P l.
   Proof. rewrite <- Forall_forall; induction 1; eauto. Qed.
@@ -734,7 +729,7 @@ Section FAN_cover.
     + now repeat constructor.
     + constructor 2; intros l Hl.
       apply cover_fimage_Forall.
-      intros ? ?%(fimage_sg_inv_r Hl); auto.
+      intros ? ?%(fimage_sg_l_inv Hl); auto.
   Qed.
 
   Hint Resolve FAN_cover : core.
@@ -767,7 +762,8 @@ Section FAN_cover.
 
 End FAN_cover.
 
-(** prefixes of sequences *)
+(** (reverse) n-prefixes of sequences
+    beware that pfx α n = [α (n-1);...;α 0] *)
 
 Section pfx.
 
@@ -785,11 +781,14 @@ Section pfx.
   Fact pfx_length α n : ⌊pfx α n⌋ = n.
   Proof. induction n; simpl; auto. Qed.
 
-  Fact pfx_add α n m : pfx α (n+m) = pfx (λ i, α (i+m)) n ++ pfx α m.
-  Proof. now induction n; simpl; f_equal. Qed.
+  Fact pfx_fix α n : pfx α (1+n) = α n :: pfx α n.
+  Proof. reflexivity. Qed.
 
   Fact pfx_ext α β n : (∀ i : nat, i < n → α i = β i) → pfx α n = pfx β n.
   Proof. induction n; intro; simpl; f_equal; auto. Qed.
+
+  Fact pfx_add α n m : pfx α (n+m) = pfx (λ i, α (i+m)) n ++ pfx α m.
+  Proof. now induction n; simpl; f_equal. Qed.
 
   Fact pfx_S α n : pfx α (S n) = pfx (λ i, α (1+i)) n ++ [α 0].
   Proof.
@@ -803,75 +802,82 @@ Section pfx.
     → l = pfx (λ i, α (i+⌊m⌋)) ⌊l⌋
     ∧ m = pfx α ⌊m⌋.
   Proof.
-    induction n as [ | n IHn ] in α, l |- *; simpl.
-    + now intros (-> & ->)%app_eq_nil; simpl.
-    + destruct l as [ | x l ]; simpl.
-      * intros ->; simpl.
-        now rewrite pfx_length.
-      * intros (-> & H)%cons_inj.
-        destruct IHn with (1 := H) as (-> & ->).
-        apply f_equal with (f := @length _) in H.
-        rewrite !pfx_length in *.
-        split; auto; repeat f_equal.
-        subst; now rewrite app_length.
+    intros E.
+    apply app_length_inj.
+    + rewrite E, <- pfx_add.
+      f_equal.
+      apply f_equal with (f := length) in E.
+      now rewrite app_length, pfx_length in E.
+    + now rewrite pfx_length.
   Qed.
 
 End pfx.
 
 (** the extends relation between lists *)
 
-Inductive extends {X} l : list X → Prop :=
-  | extends_intro x : extends l (x::l).
+Section extends.
 
-Fact extends_inv {X} (l m : list X) :
-    extends l m
-  → match m with
-    | []   => False
-    | _::m => l = m
-    end.
-Proof. now induction 1. Qed.
+  Variable (X : Type).
 
-Hint Constructors extends : core.
+  Implicit Type (l : list X).
 
-Fact extends_iff X l m : extends l m ↔ ∃ x : X, m = x::l.
-Proof.
-  split.
-  + induction 1; eauto.
-  + intros (? & ->); auto.
-Qed.
+  Inductive extends l : list X → Prop :=
+    | extends_intro x : extends l (x::l).
 
-(* extends-sequences are sequences of n-prefixes *)
+  Hint Constructors extends : core.
 
-Fact hd_extends {X l m} : extends l m → { x : X | m = x::l }.
-Proof.
-  destruct m as [ | x m ]; intros H%extends_inv.
-  + easy.
-  + now exists x; subst.
-Qed.
+  Fact extends_inv (l m : list X) :
+      extends l m
+    → match m with
+      | []   => False
+      | _::m => l = m
+      end.
+  Proof. now induction 1. Qed.
 
-Fact extends_pfx X (α : nat → list X) :
-    α 0 = [] 
-  → (∀n, extends (α n) (α (S n)))
-  → { ρ | ∀n, α n = pfx ρ n }.
-Proof.
-  intros H1 H2.
-  exists (λ n, proj1_sig (hd_extends (H2 n))).
-  intros n.
-  induction n as [ | n IHn ].
-  + now simpl.
-  + simpl.
-    rewrite <- IHn.
-    exact (proj2_sig (hd_extends _)).
-Qed. 
+  Fact extends_iff l m : extends l m ↔ ∃ x : X, m = x::l.
+  Proof.
+    split.
+    + induction 1; eauto.
+    + intros (? & ->); auto.
+  Qed.
 
-Fact pfx_extends {X} (ρ : nat → X) : pfx ρ 0 = [] ∧ ∀n, extends (pfx ρ n) (pfx ρ (S n)).
-Proof. split; constructor. Qed.
+  Fact hd_extends l m : extends l m → { x : X | m = x::l }.
+  Proof.
+    destruct m as [ | x m ]; intros H%extends_inv.
+    + easy.
+    + now exists x; subst.
+  Qed.
 
-(** Monotone predicates on lists *)
+  (* extends-sequences are sequences of n-prefixes *)
+  Fact extends_pfx (α : nat → list X) :
+      α 0 = [] 
+    → (∀n, extends (α n) (α (S n)))
+    → { ρ | ∀n, α n = pfx ρ n }.
+  Proof.
+    intros H1 H2.
+    exists (λ n, proj1_sig (hd_extends (H2 n))).
+    intros n.
+    induction n as [ | n IHn ].
+    + now simpl.
+    + simpl.
+      rewrite <- IHn.
+      exact (proj2_sig (hd_extends _)).
+  Qed. 
 
-#[local] Notation monotone P := (∀x l, P l → P (x::l)).
+  (* And conversely *)
+  Fact pfx_extends (ρ : nat → X) : pfx ρ 0 = [] ∧ ∀n, extends (pfx ρ n) (pfx ρ (S n)).
+  Proof. split; constructor. Qed.
+
+End extends.
+
+Arguments extends {X}.
+
+#[local] Hint Constructors extends : core.
 
 (** bar inductive predicate specialized to lists *)
+
+(* Monotone predicates on lists *)
+#[local] Notation monotone P := (∀x l, P l → P (x::l)).
 
 Section bar.
 
@@ -879,6 +885,7 @@ Section bar.
 
   Implicit Type (P : rel₁ (list X)) (l : list X).
 
+  (* Monotone is just an instance of upward-closed *)
   Fact upclosed_extends_iff_monotone P : upclosed extends P ↔ monotone P.
   Proof.
     split.
@@ -952,37 +959,23 @@ Arguments bar {_}.
 
 #[local] Hint Constructors bar : core.
 
-Section bar_morphism.
-
-  Variables (X Y : Type) (P : rel₁ (list X)) (Q : rel₁ (list Y))
-            (f : Y → X) (Hf : ∀l, P (map f l) → Q l).
-
-  Lemma bar_morphism l m : m = map f l → bar P m → bar Q l.
-  Proof. 
-    intro.
-    rewrite !bar_iff_cover_extends.
-    apply cover_morphism with (f := map f); auto.
-    induction 1; simpl; auto.
-  Qed.
-
-End bar_morphism.
-
-(** The notion of finiteness defined as listability *)
+(** The notion of finiteness defined as listability,
+    equivalent to Kuratowsky finiteness *)
 
 (* P is a finite predicate if it is listable *)
 Definition finite {X} (P : rel₁ X) := ∃l, ∀x, P x ↔ x ∈ l.
 
 (* The carrier of a list is finite, by definition *)
-Fact finite_In X (l : list X) : finite (λ x, x ∈ l).
+Fact finite_in X (l : list X) : finite (λ x, x ∈ l).
 Proof. exists l; tauto. Qed.
-
-(* Equivalent predicates are equi-finite *)
-Fact finite_equiv X (P Q : rel₁ X) : (∀x, P x ↔ Q x) → finite Q → finite P.
-Proof. intros E (l & ?); exists l; firstorder. Qed.
 
 (* The singleton is finite *)
 Fact finite_eq X (x : X) : finite (λ y, x = y).
 Proof. exists [x]; simpl; tauto. Qed.
+
+(* Equivalent predicates are equi-finite *)
+Fact finite_equiv X (P Q : rel₁ X) : (∀x, P x ↔ Q x) → finite Q → finite P.
+Proof. intros E (l & ?); exists l; firstorder. Qed.
 
 (* Composition by a finitary relation *)
 Lemma finite_compose X Y (P : rel₁ X) (R : X → Y → Prop) :
@@ -1030,7 +1023,7 @@ Qed.
 
 #[local] Notation FAN lc := (λ l, ⋀₂(λ x c, x ∈ c) l lc).
 
-#[local] Hint Resolve finite_In : core.
+#[local] Hint Resolve finite_in : core.
 
 Fact FAN_finite X (lc : list (list X)) : finite (FAN lc).
 Proof. apply finite_Forall2_rev; eauto. Qed.
@@ -1101,8 +1094,7 @@ Arguments list_fan {_}.
 
 #[local] Hint Resolve extends_list_fan : core.
 
-(** FAN theorem on list w/o (external) reference to list_fan *)
-
+(** FAN theorem for inductive bars w/o reference to list_fan in its type *)
 Theorem FAN_bar X (P : rel₁ (list X)) : monotone P → bar P [] → bar (λ l, FAN l ⊆₁ P) [].
 Proof.
   intros HP; rewrite !bar_iff_cover_extends.
@@ -1116,7 +1108,6 @@ Qed.
 
 (** Generalization of Theorem 6 p12 of https://www.brics.dk/RS/98/39/BRICS-RS-98-39.pdf 
     where the implementation of lfan is abstracted away. *)
-
 Theorem FAN_Fridlender X (P : rel₁ (list X)) (lfan : list (list X) → list (list X)) :
          (∀l lc, l ∈ lfan lc ↔ FAN lc l)
        → monotone P
@@ -1131,18 +1122,15 @@ Qed.
 (** list branching finite trees, ie trees nested with lists *)
 
 Unset Elimination Schemes.
-
 Inductive tree X : Type := node : X → list (tree X) → tree X.
-
 Set Elimination Schemes.
 
 Arguments node {_}.
 
 #[local] Notation "⟨ x | l ⟩" := (node x l) (at level 0, format "⟨ x | l ⟩").
 
-Theorem tree_ind X (P : tree X → Prop) :
-    (∀ x l, (∀ t, t ∈ l → P t) → P ⟨x|l⟩)
-  → ∀t, P t.
+Fact tree_ind X (P : tree X → Prop) :
+    (∀ x l, (∀ t, t ∈ l → P t) → P ⟨x|l⟩) → ∀t, P t.
 Proof.
   intros HP.
   refine (fix tree_ind t := _).
@@ -1156,9 +1144,7 @@ Proof.
     * now apply IH.
 Qed.
 
-Definition wdec (P : Prop) := P ∨ ¬ P.
-
-Section tree.
+Section tree_extra.
 
   Variables X : Type.
 
@@ -1188,6 +1174,21 @@ Section tree.
        end.
   Proof. destruct 1; eauto. Qed.
 
+  Fact branch_nil_inv t z : branch t [] z ↔ root t = z.
+  Proof.
+    split.
+    + apply branch_inv.
+    + intros <-; destruct t; auto.
+  Qed.
+
+  Fact branch_cons_inv t y p z :
+      branch t (y::p) z ↔ ∃s, s ∈ sons t ∧ root s = y ∧ branch s p z.
+  Proof.
+    split.
+    + apply branch_inv.
+    + destruct t; simpl; intros ([] & ? & <- & ?); eauto.
+  Qed.
+
   Fact branch_length_tree_ht t p z : branch t p z → ⌊p⌋ < tree_ht t.
   Proof.
     induction 1 as [ | ? ? ? ? ? ? ? ? IH ]; simpl; [ lia | ].
@@ -1202,7 +1203,6 @@ Section tree.
 
   Lemma branch_wdec : (∀ x y, wdec (x = y)) → ∀ t p y, wdec (branch t p y).
   Proof.
-    unfold wdec.
     intros eqdec t.
     induction t as [ x l IH ].
     intros [ | y p ] z.
@@ -1222,7 +1222,7 @@ Section tree.
         apply (C s); eauto.
   Qed.
 
-End tree.
+End tree_extra.
 
 Arguments root {_}.
 Arguments sons {_}.
@@ -1274,6 +1274,14 @@ Section path.
     + intros ->; eauto.
   Qed.
 
+  Fact path_cons_inv T x y p z :
+      path T x (y::p) z ↔ T x y ∧ path T y p z.
+  Proof.
+    split.
+    + apply path_inv.
+    + intros []; eauto.
+  Qed.
+
   Hint Resolve path_app : core.
 
   Fact path_snoc_inv T x p a z : path T x (p++[a]) z ↔ ∃y, path T x p y ∧ T y z ∧ a = z.
@@ -1307,7 +1315,6 @@ Section path.
     → (∀ x y, wdec (x = y))
     → (∀ x p y, wdec (path T x p y)).
   Proof.
-    unfold wdec.
     intros HT eqdec x p z.
     induction p as [ | y p IHp ] in x |- *.
     + destruct (eqdec x z) as [ <- | C ]; eauto.
@@ -1329,7 +1336,7 @@ Arguments path {_}.
 Section representation_of_relations_by_trees.
 
   (** When the length of paths is bounded,
-      the paths from x of a finitary relation 
+      the paths from x of a finitary relation
       are representable by the branches
       of tree rooted with x. *)
 
@@ -1337,6 +1344,8 @@ Section representation_of_relations_by_trees.
 
   Implicit Type (T : rel₂ X) (x : X).
 
+  (* The notion of representation that
+     comes to mind first. *)
   Definition strong_represents T P x t :=
       root t = x
     ∧ ∀ p y, branch t p y ↔ path T x p y ∧ P p y.
@@ -1349,7 +1358,6 @@ Section representation_of_relations_by_trees.
      → strong_represents T P x t
      → ∀ p y, path T x p y → wdec (P p y).
   Proof.
-    unfold wdec.
     intros eqdec (_ & E) p y Hp.
     destruct (branch_wdec eqdec t p y) as [ []%E | H ]; auto.
     rewrite E in H; tauto.
@@ -1360,15 +1368,13 @@ Section representation_of_relations_by_trees.
       paths that satisfy P. 
 
       This means that t may contain branches that
-      do not satisfy P. If P is furthermore assumed
-      wdec and T-upward closed, then one can prune
-      out the branches that do not satisfy P and get
-      a strong representation. *)
+      do not satisfy P. *)
   Definition represents T P x t :=
       root t = x
     ∧ ∀ p y, P p y → (branch t p y ↔ path T x p y ).
 
-  Remark strong_represents_represents T P x :
+  (* A strong representation is a representation *)
+  Fact strong_represents__represents T P x :
       strong_represents T P x ⊆₁ represents T P x.
   Proof. 
     intros ? (? & H); split; auto.
@@ -1650,20 +1656,32 @@ Section good_irred.
   Fact good_app_left R l m : good R m → good R (l++m).
   Proof. induction l; simpl; eauto. Qed.
 
-(*
-  Fact good_pfx_inv R α n : good R (pfx α n) → ∃ i j, i < j ∧ R (α i) (α j).
+  (* good R [α_{n-1};...;α₀] iff R α_i α_j for some i < j < n 
+     remember the pfx grows from the left *)
+  Fact good_pfx_iff R α n : good R (pfx α n) ↔ ∃ i j, i < j < n ∧ R (α i) (α j).
   Proof.
-    intros (l & x & m & y & r & E & ?).
-    symmetry in E.
-    apply pfx_split in E as (E1 & E2); simpl in E2.
-    apply cons_inj in E2 as (-> & E2).
-    apply pfx_split in E2 as (E2 & E3); simpl in E3.
-    apply cons_inj in E3 as (-> & E3).
-    exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
-    rewrite app_length; simpl; lia.
+    split.
+    + intros (l & x & m & y & r & E & ?).
+      symmetry in E.
+      generalize E; intros F.
+      apply f_equal with (f := length) in F.
+      rewrite pfx_length in F.
+      repeat (rewrite app_length in F; simpl in F).
+      apply pfx_split in E as (E1 & E2); simpl in E2.
+      apply cons_inj in E2 as (-> & E2).
+      apply pfx_split in E2 as (E2 & E3); simpl in E3.
+      apply cons_inj in E3 as (-> & E3).
+      exists ⌊r⌋, ⌊m ++ α ⌊r⌋ :: r⌋; split; auto.
+      rewrite app_length; simpl; lia.
+    + intros (i & j & H1 & H2).
+      exists (pfx (λ a, α (a+(1+j))) (n-j-1)), (α j),
+             (pfx (λ a, α (a+(1+i))) (j-i-1)), (α i),
+             (pfx α i); split; trivial.
+      rewrite <- pfx_fix, <- pfx_add.
+      replace (j-i-1+(1+i)) with j by lia.
+      rewrite <- pfx_fix, <- pfx_add.
+      f_equal; lia.
   Qed.
-
-*)
 
   (* irredundant lists are (reversed) bad lists *)
   Fact not_good_iff_irred R p : ¬ good R (rev p) ↔ irred R p.
@@ -1721,6 +1739,13 @@ Section af.
       exists [], y, [], x, []; auto.
     + constructor 2; intro.
       apply bar_good_lift with (p := []); auto.
+  Qed.
+
+  Lemma af_sequences R : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
+  Proof.
+    intros ?%af__bar_good_nil α.
+    destruct (bar_sequences H α)
+      as (n & (i & j & [] & ?)%good_pfx_iff); eauto.
   Qed.
 
 End af.
@@ -1820,9 +1845,8 @@ Section af_konig_choice.
   Qed.
 
   (* the support n l if l is a supporting list for P n,
-     ie support n are the lists l which witness 
-     that P n is finite *)
-  Let support n l := ∀x, P n x ↔ x ∈ l.
+     ie support n are the lists l which witness that P n is finite *)
+  Local Definition support n l := ∀x, P n x ↔ x ∈ l.
 
   (* We use bar_negative apply to  bar (λ lc, FAN lc ⊆₁ good R) []
      with Q := λ lc, choice_list support (rev lc), ie, 
@@ -1832,7 +1856,7 @@ Section af_konig_choice.
      in those supports in good R. 
 
      As a consequence, any choice list for P of length ⌊lc⌋ is good R *)
-  Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
+  Local Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
   Proof.
     destruct (bar_negative bar_good_FAN)
       with (Q := λ lc, choice_list support (rev lc))
@@ -1869,187 +1893,3 @@ Section af_konig_choice.
 End af_konig_choice.
 
 Check af_konig_choice.
-
-Definition list_lift {X} :=
-  fix loop R (l : list X) :=
-    match l with
-    | []   => R
-    | u::l => (loop R l)↑u
-    end.
-
-Notation "R ⇈ l" := (list_lift R l) (at level 1, left associativity, format "R ⇈ l").
-
-
-Section good_bar.
-
-  Variable X : Type.
-
-  Implicit Types (R T : rel₂ X) (l : list X).
-
-  Fact lift_mono R T x : R ⊆₂ T → R↑x ⊆₂ T↑x.
-  Proof. firstorder. Qed.
-
-  Fact list_lift_app R l m : R⇈(l++m) = R⇈m⇈l.
-  Proof. induction l as [ | ? ? IH ]; simpl; auto; now rewrite IH. Qed.
-
-  Fact list_lift_incr R l : R ⊆₂ R⇈l.
-  Proof. induction l; simpl; auto. Qed.
-
-  Hint Resolve lift_mono list_lift_incr : core.
-
-  Fact list_lift_mono R T l : R ⊆₂ T → R⇈l ⊆₂ T⇈l.
-  Proof. induction l; simpl; auto; firstorder. Qed.
-
-  Fact In_list_lift R x y l : R y x → y ∈ l → ∀z, R⇈l x z.
-  Proof.
-    intros H1 H2; induction l; simpl in H2 |- *; intros z; try tauto.
-    destruct H2 as [ <- | ]; auto.
-  Qed.
-
-  Fact good_lift R u p : good R↑u p → good R (p++[u]).
-  Proof.
-    intros (l & x & m & y & r & -> & []);
-      repeat (rewrite <- app_assoc; simpl).
-    + exists l, x, m, y, (r++[u]); auto.
-    + exists (l++x::m), y, r, u, [].
-      now repeat (rewrite <- app_assoc; simpl).
-  Qed.
-
-  Hint Resolve good_lift : core.
-
-  Fact good_list_lift R l p : good R⇈l p → good R (p++l).
-  Proof.
-    induction l as [ | u l IH ] in p |- *; simpl.
-    + now rewrite app_nil_r.
-    + intros H%good_lift%IH; revert H.
-      now rewrite app_ass.
-  Qed.
-
-  (** The generalization is bar (good R↑xₙ...↑x₁) p → bar (good R) (p++[x₁;...;xₙ]) *)
-  Lemma bar_good_lift R p u : bar (good R↑u) p → bar (good R) (p++[u]).
-  Proof. induction 1; eauto. Qed.
-
-End good_bar.
-
-
-
-Fact af_mono X (R T : rel₂ X) : R ⊆₂ T → af R → af T.
-Proof.
-  intros H1 H2; revert H2 T H1; induction 1 as [ | R HR IHR ]; eauto.
-  constructor 2; intros u; apply IHR with u; firstorder.
-Qed.
-
-
-
-Fact af_comap X Y (f : Y → X) (R : rel₂ X) : af R → af (λ u v, R (f u) (f v)).
-Proof. induction 1; eauto. Qed.
-
-Section af_extra.
-
-  Variable X : Type.
-
-  Implicit Types (R T : rel₂ X) (l : list X).
-
-  Lemma bar_good__af_list_lift R l : bar (good R) l → af R⇈l.
-  Proof.
-    induction 1 as [ l Hl | l Hl IHl ]; eauto.
-    constructor 1; intros u v.
-    destruct Hl as (l' & x & m & y & r & -> & ?).
-    rewrite list_lift_app.
-    apply list_lift_incr.
-    right.
-    apply In_list_lift with (1 := H); eauto.
-  Qed.
-
-  Local Lemma af__bar_good R : af R → ∀ l T, R ⊆₂ T⇈l → bar (good T) l.
-  Proof.
-    induction 1 as [ R HR | R HR IHR ].
-    + intros.
-      constructor 2; intros x.
-      constructor 2; intros y.
-      constructor 1.
-      change (y::x::l) with ([y;x]++l).
-      apply good_list_lift.
-      exists [],y,[],x,[]; auto.
-    + intros l T HT.
-      constructor 2; intros u.
-      apply IHR with u.
-      intros ? ? []; simpl; eauto.
-  Qed.
-
-  Lemma af_list_lift__bar_good R l : af R⇈l → bar (good R) l.
-  Proof. intros H; apply af__bar_good with (1 := H); auto. Qed.
-
-  Hint Resolve bar_good__af_list_lift af_list_lift__bar_good : core.
-
-  (** This is R↑xₙ...↑x₁ ↔ bar (good R) [x₁;...;xₙ] *)
-  Theorem af_lift_iff_bar_good R l : af R⇈l ↔ bar (good R) l.
-  Proof. split; eauto. Qed.
-
-  Corollary af_iff_bar_good_nil R : af R ↔ bar (good R) [].
-  Proof. apply af_lift_iff_bar_good with (l := []). Qed.
-
-  Lemma af_sequences R : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
-  Proof.
-    intros ?%af_iff_bar_good_nil α.
-    destruct (bar_sequences H α) as (n & Hn).
-    apply good_pfx_inv with (1 := Hn).
-  Qed.
-
-  Inductive rel_option R : rel₂ (option X) :=
-    | rel_option_None : rel_option R None None
-    | rel_option_Some u v : R u v → rel_option R (Some u) (Some v).
-
-  Hint Constructors rel_option : core.
-
-  Theorem af_rel_option R : af R → af (rel_option R).
-  Proof.
-    induction 1 as [ R HR | R HR IHR ].
-    + do 2 (constructor 2; intros []); constructor 1; intros [] []; eauto.
-    + constructor 2; intros [ u | ].
-      * generalize (IHR u).
-        apply af_mono.
-        induction 1 as [ | ? ? [] ]; eauto.
-      * constructor 2; intros [ v | ].
-        - generalize (IHR v).
-          apply af_mono.
-          induction 1 as [ | ? ? [] ]; eauto.
-        - eauto.
-  Qed.
-
-End af_extra.
-
-Arguments rel_option {_}.
-
-Section konig_af.
-
-  (** Given an AF relation R and a finitely branching relation T
-      the R-irredundant sequences of T form are representable 
-      by a rose tree. *)
-
-  Variables (X : Type)
-            (T : rel₂ X) (Tfin : ∀x, finite (T x))
-            (R : rel₂ X) (Raf : af R).
-
-  Theorem konig_af x : ∃t, represents T (λ p _, irred R p) x t.
-  Proof.
-    destruct konig_bar
-      with (T := T) (P := good R) (x := x)
-      as (t & H1 & H2); auto.
-    + intros y ? (l & u & m & v & r & -> & ?); exists (y::l), u, m, v, r; auto.
-    + now apply af_iff_bar_good_nil.
-    + exists t; split; auto.
-      intros ? ? ?; now apply H2, not_good_iff_irred.
-  Qed.
-
-End konig_af.
-
-
-
-
-
-
-
-
-
-
