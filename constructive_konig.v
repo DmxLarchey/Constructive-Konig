@@ -55,7 +55,7 @@ Proof.
   intros E.
   exists (firstn a m), (skipn a m); split.
   + now rewrite firstn_skipn.
-  + rewrite firstn_length_le, length_skipn; lia. 
+  + rewrite firstn_length_le, skipn_length; lia. 
 Qed.
 
 (* Finite reification of an existential quantifier *)
@@ -597,6 +597,8 @@ Section acc_instances.
 
   Variables (X : Type) (R : rel₂ X).
 
+  Implicit Types (Q : rel₁ X).
+
   Lemma acc_negative x : acc R x → ∀Q, Q x → (∀y, Q y → ∃z, Q z ∧ R y z) → False.
   Proof.
     intros H%acc_iff_cover_empty Q H1 H2.
@@ -817,7 +819,7 @@ Fact extends_inv {X} (l m : list X) :
     end.
 Proof. now induction 1. Qed.
 
-Hint Constructors extends : core.
+#[local] Hint Constructors extends : core.
 
 Fact extends_iff X l m : extends l m ↔ ∃ x : X, m = x::l.
 Proof.
@@ -863,7 +865,7 @@ Section bar.
 
   Variables (X : Type).
 
-  Implicit Type (P : rel₁ (list X)) (l : list X).
+  Implicit Type (P Q : rel₁ (list X)) (l : list X).
 
   Fact upclosed_extends_iff_monotone P : upclosed extends P ↔ monotone P.
   Proof.
@@ -1576,7 +1578,7 @@ Section konig_bar.
   Proof.
     apply bar_negative with (Q := Q x).
     + now apply FAN_bar.
-    + now intros [].
+    + now intros []; simpl; auto.
     + intros lc Hlc.
       destruct (circle_bounded (1+⌊lc⌋) x) as (l & Hl).
       exists l; intros p.

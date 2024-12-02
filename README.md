@@ -20,8 +20,8 @@ library (distributed with Coq), and only on the `List`, `Arith`, `Lia`, `Permuta
 It is intented to be read and executed within an IDE for Coq such as eg [CoqIDE](https://coq.inria.fr/download) or 
 [vscoq](https://github.com/coq-community/vscoq). 
 
-Any version of Coq starting from `8.13.0` and 
-upto at least `8.20` should be ok to compile and/or review the file [`constructive_konig.v`](constructive_konig.v).
+Any version of Coq starting from `8.14` and upto at least `8.20` should be ok 
+to compile and/or review the file [`constructive_konig.v`](constructive_konig.v).
 Since this is a single file, there is no need to pre-compile before reviewing. 
 
 # Remarks
