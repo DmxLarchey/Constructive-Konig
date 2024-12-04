@@ -12,7 +12,7 @@
 # Constructive substitutes for König's lemma (artifact)
 
 This project is composed of a Coq artifact for the TYPES 2024 post-proceedings submission
-[_Constructive substitutes for König's lemma_]() by Dominique Larchey-Wendling.
+[_Constructive substitutes for König's lemma_](https://members.loria.fr/DLarchey/files/papers/types-post-2024.pdf) by Dominique Larchey-Wendling.
 
 The standalone Coq file [`constructive_konig.v`](constructive_konig.v)
 contains the developement and is largely commented. It has minimal dependencies, only on the standard 
