@@ -7,7 +7,43 @@
 (*        Mozilla Public License Version 2.0, MPL-2.0         *)
 (**************************************************************)
 
-From Coq Require Import List Arith Lia Permutation Utf8.
+(** This is the Type-bounded version of the cover, bar and af predicates
+    that carry computational information for the computation of
+    the FAN functional. 
+
+    What need conversions:
+    - the list membership predicate denoted x ∈ l below
+      now has a Type-bounded counterpart denoted x ∈ₜ l
+      which contain not only the information of membership
+      but also of "position" of x in l, hence x ∈ₜ l is the
+      type of occurrences of x in l;
+    - the permutatibility predicate denoted l ~ₚ m is converted
+      into the type of permutations l ~ₜ m;
+    - a small part of the List module and Permutation module
+      most be lifted to Type-bounded as well. Notice that
+      we need both verions of ∈ and ∈ₜ, but only Type-bounded
+      permutations; 
+    - of course cover and bar (we skip acc/Acc/founded here)
+    - interesting is the DC (dependent choice) is provable
+      into Type (not in Prop) hence the sequential and the
+      negative characterizations are equivalent for the
+      Type-bounded versions.
+    - we do not study the role played by strong XM 
+      ie (∀P : Type, P + (P → False)) because we think
+      such an axiom is way too strong anyway !!
+    - incl and fimage need to be lifted to Type
+    
+    - We obtain the FAN theorem for Type-bounded covers,
+      for Type-bounded bars (incl Fridlender's formulation)
+      and König's lemma for Type-bounded AF relations
+    - These allow the computation of the FAN functional,
+      eg the bound in the length of the branches of tree.
+      
+    - we do not adapt the part related to the representation
+      of trees but this should not pose any difficulty.
+*) 
+
+From Coq Require Import List Arith Lia Utf8.
 
 Import ListNotations.
 
@@ -24,37 +60,21 @@ Set Implicit Arguments.
 #[local] Reserved Notation "x ∈ₜ l" (at level 70, no associativity, format "x  ∈ₜ  l").
 #[local] Reserved Notation "l ~ₜ m" (at level 70, no associativity, format "l  ~ₜ  m").
 
-(** Choice of the Base sort, either Base := Prop or Base := Type *)
-
 (* Base := Type based implementation of connectives *)
 
 Module Base_is_Type.
 
+  (* Type-bounded connectives *)
+
   Notation Base := Type (only parsing).
-  Notation Absurd := Empty_set (only parsing).
-  Notation DepSum := sigT (only parsing).
-  Notation NonDepSum := sum (only parsing).
-  Notation NonDepProd := prod (only parsing).
+  Notation Absurd := Empty_set (only parsing).  (* ⊥ₜ *)
+  Notation DepSum := sigT (only parsing).       (* ∃ₜ *)
+  Notation NonDepSum := sum (only parsing).     (* ∨ₜ *)
+  Notation NonDepProd := prod (only parsing).   (* ∧ₜ *)
 
 End Base_is_Type.
 
-(* Base := Prop based implementation of connectives *)
-
-Module Base_is_Prop.
-
-  Notation Base := Prop (only parsing).
-  Notation Absurd := False (only parsing).
-  Notation DepSum := ex (only parsing).
-  Notation NonDepSum := or (only parsing).
-  Notation NonDepProd := and (only parsing).
-
-End Base_is_Prop.
-
-(** Here is the point where the choice is actually performed *)
 Import Base_is_Type.
-
-(* The alternate choice could be "Import Base_is_Prop" but some
-   proofs below are specific/simpler in the Base := Type case *)
 
 #[local] Notation "⊥ₜ" := Absurd (only parsing) : type_scope.
 #[local] Notation "x ∨ₜ y" := (NonDepSum x y) (only parsing) : type_scope.
@@ -86,12 +106,9 @@ Arguments cons {_}.
 (* Usual notations for length, membership and permutations *)
 #[local] Notation "⌊ l ⌋" := (length l) (at level 0, format "⌊ l ⌋").
 #[local] Notation "x ∈ l" := (In x l) (at level 70, no associativity, format "x  ∈  l").
-#[local] Notation "l ~ₚ m" := (@Permutation _ l m) (at level 70, no associativity, format "l  ~ₚ  m").
 
 (* Usual hints for membership, inclusion of lists and permutations *)
 #[local] Hint Resolve in_eq in_cons in_or_app incl_refl incl_tl : core.
-#[local] Hint Constructors Permutation : core.
-#[local] Hint Resolve Permutation_middle Permutation_cons_app Permutation_in Permutation_sym : core.
 
 (** Utilities: notice that some of the facts below might exist, possibly under
     a different name, in the Coq standard library but they might not exist
@@ -155,14 +172,7 @@ Section Permutation_Base.
     | permb_trans l m k :  l ~ₜ m → m ~ₜ k → l ~ₜ k
   where "l ~ₜ m" := (Permutation_Base l m).
   
-  Hint Constructors Permutation_Base inhabited : core.
-
-  Fact Permutation_iff_inhabited_Permutation_Base l m : l ~ₚ m ↔ inhabited (l ~ₜ m).
-  Proof.
-    split.
-    + induction 1 as [ | ? ? ? _ [] | | ? ? ? _ [] _ [] ]; eauto.
-    + intros [H]; revert H; induction 1; eauto.
-  Qed.
+  Hint Constructors Permutation_Base : core.
 
   Fact Permutation_Base_refl l : l ~ₜ l.
   Proof. induction l; simpl; auto. Qed.
@@ -223,6 +233,7 @@ Proof.
   + rewrite firstn_length_le, skipn_length; lia.
 Qed.
 
+(* Base-bounded version of List.Forall_forall *) 
 Fact Forall_forall_In_Base X (P : rel₁ X) l : ⋀₁P l ↔ ∀x, x ∈ₜ l → P x.
 Proof.
   split.
@@ -243,6 +254,7 @@ Proof.
     destruct IHl; eauto.
 Qed.
 
+(* Base-bounded version of the above *)
 Fact forall_ex_Forall2_Base X Y (R : X → Y → Prop) l : (∀x, x ∈ₜ l → ∃ₜ y, R x y) → ∃ₜ m, ⋀₂R l m.
 Proof.
   induction l as [ | x l IHl ]; intros Hl.
@@ -313,59 +325,6 @@ Proof.
   + intros (? & ? & -> & [])%Forall2_cons_left_inv; eauto.
 Qed.
 
-(** The three below definitions of accessibility are the same:
-      - founded 
-      - acc 
-      - Acc
-    apart from the orientation of the relation 
-    or from superfluous premises. *)
-
-Inductive acc {X} (R : X → X → Base) x : Base :=
-  | acc_intro : (∀y, R x y → acc R y) → acc R x.
-
-Fact acc_irrefl X (R : rel₂ X) x : acc R x → ¬ R x x.
-Proof. unfold not; induction 1; eauto. Qed.
-
-(** This is the notion "R-founded" defined in [SC], Definition 3.1 p 74
-
-    [SC] Claudio Sacerdoti Coen and Silvio Valentini. "General Recursion and Formal Topology." 
-         PAR-10. Partiality and Recursion in Interactive Theorem Provers, volume 5 of 
-         EPiC Series in Computing, pages 72–83. EasyChair, 2012. doi:10.29007/hl75. *)
-
-Inductive founded {X} (R : X → X → Base) x : Base :=
-  | founded_intro : ¬ R x x → (∀y, R x y → founded R y) → founded R x.
-
-(* This is Coq standard definition of Acc R (ported to Base)
-   which uses the reversed relation as compared to acc R *)
-
-Inductive Acc {X} (R : X → X → Base) x : Base :=
-  | Acc_intro : (∀y, R y x → Acc R y) → Acc R x.
-
-Section founded_vs_acc_vs_Acc.
-
-  Variables (X : Type).
-
-  Implicit Type (R : rel₂ X).
-
-  Hint Constructors acc founded Acc : core.
-
-  Fact founded_iff_acc R x : founded R x ⇄ₜ acc R x.
-  Proof.
-    split.
-    + induction 1; auto.
-    + induction 1; eauto.
-      constructor; auto.
-      now intros ?%acc_irrefl.
-  Qed.
-
-  Remark Acc_rev_iff_acc R x : Acc R⁻¹ x ⇄ₜ acc R x.
-  Proof. split; induction 1; eauto. Qed.
-
-  Remark acc_rev_iff_Acc R x : acc R⁻¹ x ⇄ₜ Acc R x.
-  Proof. split; apply Acc_rev_iff_acc. Qed.
-
-End founded_vs_acc_vs_Acc.
-
 (** The notion of being upward closed for T *)
 
 #[local] Notation upclosed T P := (∀ x y, T x y → P x → P y).
@@ -377,6 +336,7 @@ Proof. intros ? ? ?; rewrite !Forall_forall_In_Base; eauto. Qed.
 
 Unset Elimination Schemes.
 
+(* Both the transition relation T and the output are lifted to Base := Type *)
 Inductive cover	{X} (T : X → X → Base) (P : rel₁ X) x : Base :=
   | cover_stop : P x → cover T P x
   | cover_next : (∀y, T x y → cover T P y) → cover T P x.
@@ -442,17 +402,6 @@ Section cover_extra.
   (* It preserves upward closed predicates *)
   Fact cover_upclosed T P : upclosed T P → upclosed T (cover T P).
   Proof. intros ? ? y H2 H3; revert H3 y H2; induction 1; eauto. Qed.
-
-  (*
-  Fact cover_idempotent T P : cover T (cover T P) ⊆₁ cover T P.
-  Proof. induction 1; eauto. Qed.
-  *)
-
-  Hint Constructors acc : core.
-
-  (* The cover inductive predicate subsumes the acc(essibility) predicate *)
-  Theorem acc_iff_cover_empty T x : acc T x ⇄ₜ cover T (λ _, ⊥) x.
-  Proof. split; induction 1; now eauto. Qed.
 
   (* Positive characterization of cover T P x is ∀K, cover_pos T P x K *)
   Definition cover_pos T P x := λ K, P ⊆₁ K → (∀y, T y ⊆₁ K → K y) → K x.
@@ -553,29 +502,6 @@ Section cover_extra.
   Qed.
 
 End cover_extra.
-
-(** acc inductive predicate specializations *)
-
-Section acc_instances.
-
-  Variables (X : Type) (R : rel₂ X).
-
-  Implicit Types (K : X → Base) (ρ : nat → X).
-
-  Lemma acc_negative x : acc R x → ∀K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ R y z) → ⊥.
-  Proof.
-    intros H%acc_iff_cover_empty Q H1 H2.
-    now destruct (cover_negative H _ H1 H2) as (? & []).
-  Qed.
-
-  Lemma acc_sequences x : acc R x → ∀ρ, ρ 0 = x → (∀n, R (ρ n) (ρ (S n))) → ⊥.
-  Proof.
-    intros H%acc_iff_cover_empty ρ <- ?.
-    destruct cover_sequences
-      with (ρ := ρ) (1 := H); eauto.
-  Qed.
-
-End acc_instances.
 
 (** Finitary lifting of a binary relation to lists *)
 
@@ -691,14 +617,6 @@ Section FAN_cover.
 
   Theorem FAN_cover_many l : (∀x, x ∈ₜ l → cover T P x) → cover T† ⋀₁P l.
   Proof. intros Hl; apply cover_fimage_Forall; eauto. Qed.
- 
-  (** This characterization looks like the characterization
-      of Accessibility wrt. to e.g. list ordering, such as
-
-      https://github.com/DmxLarchey/Hydra/blob/a387860ba85490cd925c4488ab2f5b3e8fddbbcf/theories/hydra.v#L222
-
-      Remark by DLW: remains to be further investigated,
-        could Acc_lo_iff be derived from cover_fimage_iff below ? *)
 
   Fact cover_fimage_Forall_Forall l : cover T† ⋀₁P l → ∀x, x ∈ₜ l → cover T P x.
   Proof. 
@@ -1039,18 +957,8 @@ Section list_fan.
     + intros (? & ? & -> & ? & ?%IH)%list_prod_spec; eauto.
   Qed.
 
-  (* list_fan gives an explicit inhabitant of finite (FAN _) *)
-  Local Remark list_fan_finite_inhabits lc : finite (FAN lc).
-  Proof. exists (list_fan lc); apply list_fan_spec. Qed.
-
-  Fact list_fan_cons_inv c lc l : l ∈ list_fan (c::lc) ↔ ∃ x m, l = x::m ∧ x ∈ c ∧ m ∈ list_fan lc.
-  Proof.
-    rewrite <- list_fan_spec; split.
-    + intros (x & m & ?)%Forall2_cons_right_inv.
-      exists x, m; now rewrite <- list_fan_spec.
-    + intros (x & m & -> & ? & ?%list_fan_spec); eauto.
-  Qed.
-  
+  (* This proof requires more precision than the one given by list_fan_spec
+     because we need to know positions in lists, not just memebership *)
   Fact list_fan_cons_inv_Base c lc l : l ∈ₜ list_fan (c::lc) ⇄ₜ ∃ₜ x m, l = x::m ∧ₜ x ∈ₜ c ∧ₜ m ∈ₜ list_fan lc.
   Proof.
     split.
@@ -1202,11 +1110,14 @@ Section af.
       apply bar_good_lift with (p := []); auto.
   Qed.
 
-  Lemma af_sequences R : af R → ∀α, ∃ i j, i < j ∧ R (α i) (α j).
+  (** Base:=Type bounded af R predicate contains computational
+      information, ie for any sequence α, one can compute a
+      bound under which a good pair must occur *)
+  Lemma af_sequences R : af R → ∀α, ∃ₜ n, ∃ i j, i < j < n ∧ R (α i) (α j).
   Proof.
     intros H%af__bar_good_nil α.
-    destruct (bar_sequences H α)
-      as (n & (i & j & [] & ?)%good_pfx_iff); eauto.
+    destruct (bar_sequences H α) as (n & Hn).
+    exists n; now apply good_pfx_iff.
   Qed.
 
 End af.
