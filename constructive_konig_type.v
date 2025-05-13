@@ -13,6 +13,55 @@ Import ListNotations.
 
 Set Implicit Arguments.
 
+(** Notations for Base based logical connectives, see below *)
+
+#[local] Reserved Notation "⊥ₜ" (at level 0).
+#[local] Reserved Notation "x '∨ₜ' y" (at level 80, right associativity).
+#[local] Reserved Notation "x '∧ₜ' y" (at level 80, right associativity).
+#[local] Reserved Notation "P '⇄ₜ' Q" (at level 95, no associativity).
+#[local] Reserved Notation "'∃ₜ' x .. y , p" (at level 200, x binder, right associativity).
+
+#[local] Reserved Notation "x ∈ₜ l" (at level 70, no associativity, format "x  ∈ₜ  l").
+#[local] Reserved Notation "l ~ₜ m" (at level 70, no associativity, format "l  ~ₜ  m").
+
+(** Choice of the Base sort, either Base := Prop or Base := Type *)
+
+(* Base := Type based implementation of connectives *)
+
+Module Base_is_Type.
+
+  Notation Base := Type (only parsing).
+  Notation Absurd := Empty_set (only parsing).
+  Notation DepSum := sigT (only parsing).
+  Notation NonDepSum := sum (only parsing).
+  Notation NonDepProd := prod (only parsing).
+
+End Base_is_Type.
+
+(* Base := Prop based implementation of connectives *)
+
+Module Base_is_Prop.
+
+  Notation Base := Prop (only parsing).
+  Notation Absurd := False (only parsing).
+  Notation DepSum := ex (only parsing).
+  Notation NonDepSum := or (only parsing).
+  Notation NonDepProd := and (only parsing).
+
+End Base_is_Prop.
+
+(** Here is the point where the choice is actually performed *)
+Import Base_is_Type.
+
+(* The alternate choice could be "Import Base_is_Prop" but some
+   proofs below are specific/simpler in the Base := Type case *)
+
+#[local] Notation "⊥ₜ" := Absurd (only parsing) : type_scope.
+#[local] Notation "x ∨ₜ y" := (NonDepSum x y) (only parsing) : type_scope.
+#[local] Notation "x ∧ₜ y" := (NonDepProd x y) (only parsing) : type_scope.
+#[local] Notation "∃ₜ x .. y , p" := (DepSum (fun x => .. (DepSum (fun y => p)) ..)) (only parsing) : type_scope.
+#[local] Notation "P ⇄ₜ Q" := ((P → Q) ∧ₜ (Q → P))%type (only parsing) : type_scope.
+
 (* False and True propositions *)
 #[local] Notation "⊤" := True.
 #[local] Notation "⊥" := False.
@@ -51,6 +100,106 @@ Arguments cons {_}.
 
 (** List utilities *)
 
+Section In_Base.
+
+  Variables (X : Type).
+
+  Implicit Type (x : X).
+
+  Fixpoint In_Base x l : Base :=
+    match l with
+    | []   => ⊥ₜ
+    | y::l => y = x ∨ₜ x ∈ₜ l
+    end
+  where "x ∈ₜ l" := (In_Base x l).
+
+  Fact In_iff_inhabited_In_Base x l : x ∈ l ↔ inhabited (x ∈ₜ l).
+  Proof. 
+    split.
+    + induction l as [ | y l IH ].
+      * now simpl.
+      * intros [ | []%IH ]; simpl; constructor; auto.
+    + intros [H]; revert H.
+      induction l; simpl; intros []; subst; auto. 
+  Qed.
+   
+  Fact In_Base_eq x l : x ∈ₜ x::l.
+  Proof. now left. Qed.
+  
+  Fact In_Base_cons x y l : y ∈ₜ l → y ∈ₜ x::l.
+  Proof. now right. Qed.
+
+  Fact In_Base_app_iff x l m : x ∈ₜ l++m ⇄ₜ x ∈ₜ l ∨ₜ x ∈ₜ m.
+  Proof.
+    split.
+    + induction l as [ | y l IH ]; simpl; auto.
+      intros [ | []%IH ]; eauto.
+    + intros [ H | H ]; revert H.
+      * induction l as [ | y l IH ]; simpl; intros []; eauto.
+      * induction l; simpl; eauto.
+  Qed.
+
+End In_Base.
+
+#[local] Notation "x ∈ₜ l" := (@In_Base _ x l) (only parsing) : type_scope.
+#[local] Hint Resolve In_Base_eq In_Base_cons : core.
+
+Section Permutation_Base.
+
+  Variables (X : Type).
+
+  Inductive Permutation_Base : list X → list X → Base :=
+    | permb_nil  : [] ~ₜ []
+    | permb_skip x l m : l ~ₜ m → x::l ~ₜ x::m
+    | permb_swap x y l : y::x::l ~ₜ x::y:: l
+    | permb_trans l m k :  l ~ₜ m → m ~ₜ k → l ~ₜ k
+  where "l ~ₜ m" := (Permutation_Base l m).
+  
+  Hint Constructors Permutation_Base inhabited : core.
+
+  Fact Permutation_iff_inhabited_Permutation_Base l m : l ~ₚ m ↔ inhabited (l ~ₜ m).
+  Proof.
+    split.
+    + induction 1 as [ | ? ? ? _ [] | | ? ? ? _ [] _ [] ]; eauto.
+    + intros [H]; revert H; induction 1; eauto.
+  Qed.
+
+  Fact Permutation_Base_refl l : l ~ₜ l.
+  Proof. induction l; simpl; auto. Qed.
+
+  Fact Permutation_Base_sym l m : l ~ₜ m → m ~ₜ l.
+  Proof. induction 1; eauto. Qed.
+  
+  Hint Resolve Permutation_Base_refl : core.
+
+  Fact Permutation_Base_middle l m x : x::l++m ~ₜ l++x::m.
+  Proof.
+    induction l; simpl; auto.
+    apply permb_trans with (1 := permb_swap _ _ _); auto.
+  Qed.
+
+  Hint Resolve Permutation_Base_middle : core.
+
+  Fact Permutation_Base_cons_app l m k x : l ~ₜ m++k → x::l ~ₜ m++x::k.
+  Proof. eauto. Qed.
+
+  Fact Permutation_Base_In_Base l m x : l ~ₜ m → x ∈ₜ l → x ∈ₜ m.
+  Proof.
+    induction 1; simpl; eauto.
+    + intros []; auto.
+    + intros [ | [] ]; auto.
+  Qed.
+
+End Permutation_Base.
+
+#[local] Notation "l ~ₜ m" := (@Permutation_Base _ l m).
+#[local] Hint Constructors Permutation_Base : core.
+
+#[local] Hint Resolve Permutation_Base_refl
+                      Permutation_Base_sym 
+                      Permutation_Base_cons_app
+                      Permutation_Base_In_Base : core. 
+
 Fact cons_inj X (x y : X) l m : x::l = y::m → x = y ∧ l = m.
 Proof. now inversion 1. Qed.
 
@@ -74,12 +223,27 @@ Proof.
   + rewrite firstn_length_le, skipn_length; lia.
 Qed.
 
+Fact Forall_forall_In_Base X (P : rel₁ X) l : ⋀₁P l ↔ ∀x, x ∈ₜ l → P x.
+Proof.
+  split.
+  + induction 1; simpl; intros ? []; subst; auto.
+  + induction l; simpl; auto.
+Qed.
+
 (* Forall2 mononotic *)
 Fact Forall2_mono X Y (R T : X → Y → Prop) : R ⊆₂ T → ⋀₂R ⊆₂ ⋀₂T.
 Proof. induction 2; eauto. Qed.
 
 (* Finite reification of an existential quantifier *)
 Fact forall_ex_Forall2 X Y (R : X → Y → Prop) l : (∀x, x ∈ l → ∃y, R x y) → ∃m, ⋀₂R l m.
+Proof.
+  induction l as [ | x l IHl ]; intros Hl.
+  + exists []; eauto.
+  + destruct (Hl x); auto.
+    destruct IHl; eauto.
+Qed.
+
+Fact forall_ex_Forall2_Base X Y (R : X → Y → Prop) l : (∀x, x ∈ₜ l → ∃ₜ y, R x y) → ∃ₜ m, ⋀₂R l m.
 Proof.
   induction l as [ | x l IHl ]; intros Hl.
   + exists []; eauto.
@@ -200,161 +364,6 @@ Proof.
       as [ (_ & ->) | (_ & ->) ]; auto.
 Qed.
 
-(** Recollection of De Morgan laws, exclusively used in one equivalence below to
-    give an explanation of positive and negative characterizations of covers.
-    We *DO NOT* import the Classical module to be precise on a which De Morgan law
-    we actually use in this equivalence proof.
-
-    Notice that we keep excluded middle (XM) as a (local) assumption, ie we do not
-    declare it as an axiom so we can be precise in our claim that it is only
-    needed to show that equivalence between the positive and negative
-    characterization of covers. *)
-
-(* This is the definition of propositional eXcluded Middle (XM) *)
-Definition XM := ∀P, P ∨ ¬ P.
-
-Section De_Morgan_FO.
-
-  Variables X : Type.
-
-  (** These are intuitionistically valid *)
-
-  (* Congruence laws *)
-
-  Fact imp_iff_compat (A B C D : Prop) : (A ↔ C) → (B ↔ D) → (A → B) ↔ (C → D).
-  Proof. tauto. Qed.
-
-  Fact not_iff_compat (A B : Prop) : (A ↔ B) → ¬ A ↔ ¬ B.
-  Proof. tauto. Qed.
-
-  Fact forall_iff_compat (P Q : X → Prop) : (∀x, P x ↔ Q x) → (∀x, P x) ↔ (∀x, Q x).
-  Proof. intros H1; split; intros ? ?; apply H1; auto. Qed.
-
-  (* Three intuitionistic propositional De Morgan laws *)
-
-  Fact imp_not__not_conj (P Q : Prop) : (P → ¬ Q) ↔ ¬ (P ∧ Q).
-  Proof. tauto. Qed.
-
-  Fact imp_imp_comm (A B C : Prop) : (A → B → C) ↔ (B → A → C).
-  Proof. tauto. Qed.
-
-  Fact contrapose_not (A B : Prop) : (A → ¬ B) ↔ (B → ¬ A).
-  Proof. tauto. Qed.
-
-  (* Two intuitionistic first-order De Morgan laws *)
-
-  Fact not_ex_conj (P Q : X → Prop) : ¬ (∃y, P y ∧ Q y) ↔ ∀y, P y → ¬ Q y.
-  Proof.
-    split.
-    + intros H y H1 H2; apply H; eauto.
-    + intros H1 (y & H2%H1 & []%H2).
-  Qed.
-
-  Fact not_ex_forall_not (P : X → Prop) : ¬ (∃x, P x) ↔ ∀x, ¬ P x.
-  Proof.
-    split.
-    + intros H x p; apply H; eauto.
-    + now intros H (? & ?%H).
-  Qed.
-
-  (** For the below De Morgan laws, one needs excluded middle *)
-
-  Hypothesis xm : XM.
-
-  Fact nnpp (P : Prop) : ¬ ¬ P ↔ P.
-  Proof.
-    split.
-    + intros H.
-      destruct (xm P); auto.
-      now destruct H.
-    + intros H H1; now apply H1.
-  Qed.
-
-  (* These two are classic propositional De Morgan laws *)
-
-  Fact contrapose_0 (P Q : Prop) : (P → Q) ↔ (¬ Q → ¬ P).
-  Proof.
-    split.
-    + intros H G ?%H; now apply G.
-    + intros H H1.
-      destruct (xm Q) as [ | []%H ]; trivial.
-  Qed.
-
-  (* This is classic first order De Morgan contraposition *)
-  Fact contrapose_1 (P Q : X → Prop) : P ⊆₁ Q ↔ (λ x, ¬ Q x) ⊆₁ (λ x, ¬ P x).
-  Proof.
-    split.
-    + intros H x H1; contradict H1; auto.
-    + intros H x; apply contrapose_0; auto.
-  Qed.
-
-  (* ¬ (P → Q) ↔ (P ∧ ¬ Q) but in negative position to avoid the conjunction ∧ *)
-  Fact not_imp_negative (P Q A : Prop) : (¬ (P → Q) → A) ↔ (¬ Q → P → A).
-  Proof.
-    split.
-    + intros H1 H2 H3; apply H1; intros ?; apply H2; auto.
-    + intros H1 H2; apply H1.
-      * contradict H2; auto.
-      * apply nnpp; contradict H2; now intros ?%H2.
-  Qed.
-
-End De_Morgan_FO.
-
-(** Some basic results about Dependent Choice (DC), here in type theory.
-    We give a more convenient form to DC over a Σ-type *)
-
-Section dependent_choice_sigma.
-
-  (* This is Dependent Choice:
-       any total relation contains a sequence
-       starting at any given point. *)
-
-  Definition DC X :=
-    ∀ R : rel₂ X,
-        (∀x, ∃y, R x y) 
-       → ∀x, ∃ρ, ρ 0 = x ∧ ∀n, R (ρ n) (ρ (S n)).
-
-  (* Below is a specialization of Dependent Choice on a Σ-type
-
-     If R is a total relation on {x | Q x} then there is a
-     R-sequence starting from any point in Q. *)
-
-  Definition DC_Σ {X} (Q : rel₁ X) :=
-    ∀R, (∀x, Q x → ∃y, Q y ∧ R x y)
-       → ∀x, Q x → ∃ρ, ρ 0 = x ∧ (∀n, Q (ρ n) ∧ R (ρ n) (ρ (S n))).
-
-  Fact DC_sig__DC_Σ X (Q : rel₁ X) : DC {x | Q x} → DC_Σ Q.
-  Proof.
-    intros dc R HR x Hx.
-    destruct dc
-      with (R := λ u v : sig Q, R (proj1_sig u) (proj1_sig v))
-           (x := exist _ x Hx)
-      as (ρ & H1 & H2).
-    + intros (u & Hu); simpl.
-      destruct (HR _ Hu) as (v & Hv & E).
-      now exists (exist _ v Hv).
-    + exists (fun n => proj1_sig (ρ n)); repeat split; auto.
-      * now rewrite H1.
-      * apply (proj2_sig _).
-  Qed.
-
-  Fact DC_Σ__DC X : DC_Σ (λ _ : X, ⊤) → DC X.
-  Proof.
-    intros dc R HR x.
-    destruct (dc R) with x as (ρ & H1 & H2); eauto.
-    + clear x; intros x _; destruct (HR x); eauto.
-    + exists ρ; split; auto; intro; apply H2.
-  Qed.
-
-  Hint Resolve DC_sig__DC_Σ DC_Σ__DC : core.
-
-  (* Dependent Choice and Dependent Choice on Σ-types are equivalent *)
-
-  Corollary DC_iff_DC_Σ : (∀X, DC X) ↔ ∀ X P, @DC_Σ X P.
-  Proof. split; eauto. Qed.
-
-End dependent_choice_sigma.
-
 (** The three below definitions of accessibility are the same:
       - founded 
       - acc 
@@ -362,7 +371,7 @@ End dependent_choice_sigma.
     apart from the orientation of the relation 
     or from superfluous premises. *)
 
-Inductive acc {X} (R : rel₂ X) x : Prop :=
+Inductive acc {X} (R : X → X → Base) x : Base :=
   | acc_intro : (∀y, R x y → acc R y) → acc R x.
 
 Fact acc_irrefl X (R : rel₂ X) x : acc R x → ¬ R x x.
@@ -374,13 +383,14 @@ Proof. unfold not; induction 1; eauto. Qed.
          PAR-10. Partiality and Recursion in Interactive Theorem Provers, volume 5 of 
          EPiC Series in Computing, pages 72–83. EasyChair, 2012. doi:10.29007/hl75. *)
 
-Inductive founded {X} (R : rel₂ X) x : Prop :=
+Inductive founded {X} (R : X → X → Base) x : Base :=
   | founded_intro : ¬ R x x → (∀y, R x y → founded R y) → founded R x.
 
-(* This is Coq standard definition of Acc R, part of the Init (default) module
+(* This is Coq standard definition of Acc R (ported to Base)
    which uses the reversed relation as compared to acc R *)
 
-Print Acc.
+Inductive Acc {X} (R : X → X → Base) x : Base :=
+  | Acc_intro : (∀y, R y x → Acc R y) → Acc R x.
 
 Section founded_vs_acc_vs_Acc.
 
@@ -390,7 +400,7 @@ Section founded_vs_acc_vs_Acc.
 
   Hint Constructors acc founded Acc : core.
 
-  Fact founded_iff_acc R x : founded R x ↔ acc R x.
+  Fact founded_iff_acc R x : founded R x ⇄ₜ acc R x.
   Proof.
     split.
     + induction 1; auto.
@@ -399,11 +409,11 @@ Section founded_vs_acc_vs_Acc.
       now intros ?%acc_irrefl.
   Qed.
 
-  Remark Acc_rev_iff_acc R x : Acc R⁻¹ x ↔ acc R x.
+  Remark Acc_rev_iff_acc R x : Acc R⁻¹ x ⇄ₜ acc R x.
   Proof. split; induction 1; eauto. Qed.
 
-  Remark acc_rev_iff_Acc R x : acc R⁻¹ x ↔ Acc R x.
-  Proof. rewrite <- Acc_rev_iff_acc; reflexivity. Qed.
+  Remark acc_rev_iff_Acc R x : acc R⁻¹ x ⇄ₜ Acc R x.
+  Proof. split; apply Acc_rev_iff_acc. Qed.
 
 End founded_vs_acc_vs_Acc.
 
@@ -411,14 +421,14 @@ End founded_vs_acc_vs_Acc.
 
 #[local] Notation upclosed T P := (∀ x y, T x y → P x → P y).
 
-Fact Forall_upclosed_perm X (P : rel₁ X) : upclosed (λ l m, l ~ₚ m) ⋀₁P.
-Proof. intros ? ?; rewrite !Forall_forall; eauto. Qed.
+Fact Forall_upclosed_perm X (P : rel₁ X) : upclosed (λ l m, l ~ₜ m) ⋀₁P.
+Proof. intros ? ? ?; rewrite !Forall_forall_In_Base; eauto. Qed.
 
 (** The cover inductive predicate is given by two rules *)
 
 Unset Elimination Schemes.
 
-Inductive cover	{X} (T : rel₂ X) (P : rel₁ X) x : Prop :=
+Inductive cover	{X} (T : X → X → Base) (P : rel₁ X) x : Base :=
   | cover_stop : P x → cover T P x
   | cover_next : (∀y, T x y → cover T P y) → cover T P x.
 
@@ -429,32 +439,34 @@ Set Elimination Schemes.
 Arguments cover_stop {_ _ _ _}.
 Arguments cover_next {_ _ _ _}.
 
-Section cover_ind.
+Section cover_rect.
 
   (* This one is usually auto-generated by Coq
      (but "Unset Elimination Schemes" prevents that)
      So let us review the code here. *)
 
   Variables (X : Type)
-            (T : rel₂ X)
+            (T : X → X → Base)
             (P : rel₁ X)
-            (Q : rel₁ X)
+            (Q : X → Base)
             (Qs : P ⊆₁ Q)
             (Qn : ∀y, T y ⊆₁ Q → Q y).
 
-  Fixpoint cover_ind x (d : cover T P x) : Q x :=
+  Fixpoint cover_rect x (d : cover T P x) : Q x :=
     match d with
     | cover_stop p => Qs p
-    | cover_next n => Qn (λ y hy, cover_ind (n y hy))
+    | cover_next n => Qn (λ y hy, cover_rect (n y hy))
     end.
 
-End cover_ind.
+End cover_rect.
+
+Definition cover_ind X T P (Q : X → Prop) := @cover_rect X T P Q.
 
 Section cover_morphism.
 
   (* Transfert of the cover predicate using a morphism *)
 
-  Variables (X Y : Type) (R : rel₂ X) (T : rel₂ Y)
+  Variables (X Y : Type) (R : X → X → Base) (T : Y → Y → Base)
             (P : rel₁ X) (Q : rel₁ Y)
             (f : Y → X)
             (HPQ : ∀y, P (f y) → Q y)
@@ -472,7 +484,7 @@ Section cover_extra.
 
   Variables (X : Type).
 
-  Implicit Type (R T : rel₂ X) (P Q : rel₁ X).
+  Implicit Type (R T : X → X → Base) (P Q : rel₁ X) (K : X → Base).
 
   (* cover T P is antitonic in T and monotonic in P *)
   Fact cover_mono R T P Q : T ⊆₂ R → P ⊆₁ Q → cover R P ⊆₁ cover T Q.
@@ -482,40 +494,40 @@ Section cover_extra.
   Fact cover_upclosed T P : upclosed T P → upclosed T (cover T P).
   Proof. intros ? ? y H2 H3; revert H3 y H2; induction 1; eauto. Qed.
 
+  (*
   Fact cover_idempotent T P : cover T (cover T P) ⊆₁ cover T P.
   Proof. induction 1; eauto. Qed.
+  *)
 
   Hint Constructors acc : core.
 
   (* The cover inductive predicate subsumes the acc(essibility) predicate *)
-  Theorem acc_iff_cover_empty T x : acc T x ↔ cover T (λ _, ⊥) x.
+  Theorem acc_iff_cover_empty T x : acc T x ⇄ₜ cover T (λ _, ⊥) x.
   Proof. split; induction 1; now eauto. Qed.
 
-  (* Positive characterization of cover T P x is ∀Q, cover_pos T P x Q *)
-  Definition cover_pos T P x := λ Q, P ⊆₁ Q → (∀y, T y ⊆₁ Q → Q y) → Q x.
+  (* Positive characterization of cover T P x is ∀K, cover_pos T P x K *)
+  Definition cover_pos T P x := λ K, P ⊆₁ K → (∀y, T y ⊆₁ K → K y) → K x.
 
   (* The positive characterization is just a reformulation 
      of the inductive principle cover_ind for cover T P x,
      obtained by reordering the hypotheses. *)
-  Fact cover_iff_cover_pos T P x : cover T P x ↔ ∀Q, cover_pos T P x Q.
+  Fact cover_iff_cover_pos T P x : cover T P x ⇄ₜ ∀K, cover_pos T P x K.
   Proof.
     split.
-    + intros Hx Q HQ0 HQ1; revert X T P Q HQ0 HQ1 x Hx; exact cover_ind.
+    + intros Hx Q HQ0 HQ1; revert X T P Q HQ0 HQ1 x Hx; exact cover_rect.
     + intros H; apply H; auto.
   Qed.
 
-  (* The negative characterization of cover T P x is ∀Q, cover_neg T P x Q
+  (* The negative characterization of cover T P x is ∀K, cover_neg T P x K
 
      This characterization reads as: if a predicate Q is such that
-       - Q contains x
-       - Q is T-unstoppable
-     then Q meets P *)
-  Definition cover_neg T P x := λ Q, Q x → (∀y, Q y → ∃z, Q z ∧ T y z) → ∃y, P y ∧ Q y.
+       - K contains x
+       - K is T-unstoppable
+     then K meets P *)
+  Definition cover_neg T P x := λ K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ T y z) → ∃ₜ y, P y ∧ₜ K y.
 
-  (* The positive characterization implies the negative characterization
-     but not the converse; unless XM is assumed (see below).
-     We use ∀Q, cover_pos T P x Q as an induction principle. *)
-  Lemma cover_pos__cover_neg T P x : (∀Q, cover_pos T P x Q) → ∀Q, cover_neg T P x Q.
+  (* The positive characterization implies the negative characterization *)
+  Lemma cover_pos__cover_neg T P x : (∀K, cover_pos T P x K) → ∀K, cover_neg T P x K.
   Proof.
     unfold cover_neg.
     intros H.
@@ -525,97 +537,73 @@ Section cover_extra.
       destruct (H2 _ H1) as (? & []); eauto.
   Qed.
 
-  Theorem cover_negative T P x : cover T P x → ∀Q, Q x → (∀y, Q y → ∃z, Q z ∧ T y z) → ∃y, P y ∧ Q y.
-  Proof. rewrite cover_iff_cover_pos; apply cover_pos__cover_neg. Qed.
-
-  Section cover_neg__cover_pos_DeMorgan.
-
-    Hypothesis xm : XM.
-
-    (* cover_pos and cover_neg are De Morgan duals, hence they are equivalent under excluded middle.
-       We give a proof that only uses first order De Morgan laws in addition to congruence laws,
-       which serve as a mean to rewrite under quantifiers. *)
-    Remark cover_pos_iff_neg_XM T P x Q : cover_pos T P x Q ↔ cover_neg T P x (λ x, ¬ Q x).
-    Proof.
-      unfold cover_pos, cover_neg.
-      rewrite <- not_imp_negative; trivial.
-      rewrite contrapose_0 with (Q := ∃y, P y ∧ ¬ Q y); trivial.
-      rewrite nnpp; trivial.
-      repeat apply imp_iff_compat.                  (* congruence → *)
-      + rewrite not_ex_conj.
-        apply forall_iff_compat; intro.             (* congruence ∀ *)
-        apply imp_iff_compat; [ reflexivity | ].    (* congruence → *)
-        rewrite nnpp; [ reflexivity | trivial ].
-      + apply forall_iff_compat; intro.             (* congruence ∀ *)
-        rewrite contrapose_0 with (Q := Q _); trivial.
-        apply imp_iff_compat; [ reflexivity | ].    (* congruence → *)
-        rewrite <- nnpp with (P := ∃_, _); trivial.
-        apply not_iff_compat.                       (* congruence ¬ *)
-        rewrite not_ex_forall_not.
-        apply forall_iff_compat; intro.             (* congruence → *)
-        rewrite <- imp_not__not_conj, <- contrapose_0; trivial.
-        reflexivity.
-      + reflexivity.
-    Qed.
-
-    Corollary cover_neg__cover_pos_XM T P x : (∀Q, cover_neg T P x Q) → ∀Q, cover_pos T P x Q.
-    Proof. intros H ?; apply cover_pos_iff_neg_XM, H. Qed.
-
-  End cover_neg__cover_pos_DeMorgan.
+  Theorem cover_negative T P x : cover T P x → ∀K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ T y z) → ∃ₜ y, P y ∧ₜ K y.
+  Proof. intro; now apply cover_pos__cover_neg, cover_iff_cover_pos. Qed.
 
   (* The sequential characterization of cover T P x is ∀ρ, cover_seq T P x ρ.
      This reads as any T-sequence starting at x meets P *)
-  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃n, P (ρ n).
+  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃ₜ n, P (ρ n).
 
   (* For a T-sequence ρ starting at x, its direct image 
-     Q := λ x, ∃n, x = ρ n, satisfies
+     Q := λ x, ∃ₜ n, x = ρ n, satisfies
        - Q contains x
        - Q is T-unstoppable
      Hence Q meets P, which entails that ρ meets P *)
-  Lemma cover_seq_direct_image T P x ρ : cover_neg T P x (λ x, ∃n, x = ρ n) → cover_seq T P x ρ.
+  Lemma cover_seq_direct_image T P x ρ : cover_neg T P x (λ x, ∃ₜ n, x = ρ n) → cover_seq T P x ρ.
   Proof. 
     intros H H1 H2.
     destruct H as (? & ? & ? & ->); eauto.
     intros ? (? & ->); eauto.
   Qed.
 
-  Corollary cover_neg__cover_seq T P x : (∀Q, cover_neg T P x Q) → ∀ρ, cover_seq T P x ρ.
+  Corollary cover_neg__cover_seq T P x : (∀K, cover_neg T P x K) → ∀ρ, cover_seq T P x ρ.
   Proof. intros H ρ; apply cover_seq_direct_image, H. Qed.
 
-  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃n, P (ρ n).
+  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃ₜ n, P (ρ n).
   Proof. intro; apply cover_neg__cover_seq; unfold cover_neg; now apply cover_negative. Qed.
 
-  Section cover_seq__cover_neg_Dependent_Choice.
+  Section cover_seq__cover_neg__only_when_Base_is_Type.
+  
+    (** When Base is Type, we do not need dependent choice *)
+  
+    Variables (T : X → X → Base) (P : rel₁ X) (x : X) (Hx : ∀ρ, cover_seq T P x ρ)
+              (K : X → Type) (HK1 : K x) (HK2 : ∀y, K y → { z : X & K z * T y z }%type).
 
-    Hypothesis dc : ∀X, DC X.
-
-    (* Using D(ependent) C(hoice) on a Σ-type, but w/o excluded middle, one can get
-       the negative characterization of cover T P x from the sequential one. *)
-    Lemma cover_seq__cover_neg_DC T P x : (∀ρ, cover_seq T P x ρ) → ∀Q, cover_neg T P x Q.
+    Let f : sigT K → sigT K.
     Proof.
-      rewrite DC_iff_DC_Σ in dc.
-      intros H Q Hx HQ.
-      destruct (dc _ _ HQ _ Hx)
-        as (rho & H1 & H2).
-      destruct (H _ H1) as (n & Hn); eauto.
-      + intro; apply H2.
-      + exists (rho n); split; auto; apply H2.
+      intros (y & hy).
+      destruct (@HK2 _ hy) as (z & H1 & H2).
+      now exists z.
+    Defined.
+ 
+    Local Fact f_T y : T (projT1 y) (projT1 (f y)).
+    Proof.
+      unfold f; destruct y as (y & hy).
+      now destruct (@HK2 _ hy) as (? & []).
     Qed.
 
-    Hypothesis xm : XM.
-
-    Theorem cover_seq_characterization_XM_DC T P x : cover T P x ↔ ∀ρ, cover_seq T P x ρ.
+    Let rho := @nat_rect (fun _ => sigT K) (existT _ x HK1) (fun _ => f).
+    Let ρ n := projT1 (rho n).
+    
+    Lemma cover_seq__cover_neg__Base_is_Type : { y : X & P y * K y }%type.
     Proof.
-      split.
-      + intro; now apply cover_neg__cover_seq, cover_pos__cover_neg, cover_iff_cover_pos.
-      + intro; apply cover_iff_cover_pos, cover_neg__cover_pos_XM, cover_seq__cover_neg_DC; trivial.
+      destruct (Hx ρ) as (n & Hn).
+      + reflexivity.
+      + intro; apply f_T.
+      + exists (ρ n); split; auto.
+        apply (projT2 _).
     Qed.
 
-  End cover_seq__cover_neg_Dependent_Choice.
+  End cover_seq__cover_neg__only_when_Base_is_Type.
+  
+  Theorem cover_neg_iff_cover_seq__Base_is_Type T P x : (∀K, cover_neg T P x K) ⇄ₜ ∀ρ, cover_seq T P x ρ.
+  Proof.
+    split.
+    + apply cover_neg__cover_seq.
+    + exact (@cover_seq__cover_neg__Base_is_Type T P x).
+  Qed.
 
 End cover_extra.
-
-Check cover_seq_characterization_XM_DC.
 
 (** acc inductive predicate specializations *)
 
@@ -623,12 +611,12 @@ Section acc_instances.
 
   Variables (X : Type) (R : rel₂ X).
 
-  Implicit Types (Q : rel₁ X) (ρ : nat → X).
+  Implicit Types (K : X → Base) (ρ : nat → X).
 
-  Lemma acc_negative x : acc R x → ∀Q, Q x → (∀y, Q y → ∃z, Q z ∧ R y z) → ⊥.
+  Lemma acc_negative x : acc R x → ∀K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ R y z) → ⊥.
   Proof.
     intros H%acc_iff_cover_empty Q H1 H2.
-    now destruct (cover_negative H _ H1 H2).
+    now destruct (cover_negative H _ H1 H2) as (? & []).
   Qed.
 
   Lemma acc_sequences x : acc R x → ∀ρ, ρ 0 = x → (∀n, R (ρ n) (ρ (S n))) → ⊥.
@@ -647,53 +635,55 @@ End acc_instances.
 
      T† l m if any member of m in a T-image of some member of l *)
 
-Definition fimage {X} (T : rel₂ X) l m := ∀y, y ∈ m → ∃x, x ∈ l ∧ T x y.
+Definition fimage {X} (T : X → X → Base) l m := ∀y, y ∈ₜ m → ∃ₜ x, x ∈ₜ l ∧ₜ T x y.
 
 #[local] Notation "T †" := (fimage T) (at level 1, left associativity, format "T †").
 
+Notation inclₜ l m := (∀x, x ∈ₜ l → x ∈ₜ m).
+
 Section finitary_image.
 
-  Variable (X : Type) (T : rel₂ X).
+  Variable (X : Type) (T : X → X → Base).
 
   Implicit Type (l : list X) (P : rel₁ X).
 
-  Fact fimage_mono l₁ l₂ m₁ m₂ : incl l₁ l₂ → incl m₂ m₁ → T† l₁ m₁ → T† l₂ m₂.
+  Fact fimage_mono l₁ l₂ m₁ m₂ : inclₜ l₁ l₂ → inclₜ m₂ m₁ → T† l₁ m₁ → T† l₂ m₂.
   Proof. intros ? ? H y ?; destruct (H y) as (? & []); eauto. Qed.
 
-  Fact fimage_in_r_inv l m : T† l m → ∀y, y ∈ m → T† l [y].
+  Fact fimage_in_r_inv l m : T† l m → ∀y, y ∈ₜ m → T† l [y].
   Proof. intros ? ? ? ? [ <- | [] ]; eauto. Qed.
 
   Fact fimage_sg_inv x y : T† [x] [y] → T x y.
   Proof. intros H; destruct (H y) as (? & [ <- | [] ] & ?); auto. Qed.
 
-  Fact fimage_sg_r l x y : T x y → x ∈ l → T† l [y].
+  Fact fimage_sg_r l x y : T x y → x ∈ₜ l → T† l [y].
   Proof. intros ? ? ? [ <- | [] ]; eauto. Qed.
 
   Hint Resolve fimage_sg_inv fimage_in_r_inv : core.
 
-  Fact fimage_sg_l_inv x m : T† [x] m → ∀y, y ∈ m → T x y.
+  Fact fimage_sg_l_inv x m : T† [x] m → ∀y, y ∈ₜ m → T x y.
   Proof. eauto. Qed.
 
   (* The critical lemma explaining how finite images interact with splitting *)
-  Lemma fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → ∃ m₁ m₂, m ~ₚ m₁++m₂ ∧ T† l₁ m₁ ∧ T† l₂ m₂.
+  Lemma fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → ∃ₜ m₁ m₂, m ~ₜ m₁++m₂ ∧ₜ T† l₁ m₁ ∧ₜ T† l₂ m₂.
   Proof.
     induction m as [ | x m IHm ]; intros H1.
     + exists nil, nil; repeat split; auto; intros ? [].
     + destruct IHm as (m1 & m2 & H3 & H4 & H5).
       * intros ? ?; apply H1; right; auto.
-      * destruct (H1 x) as (y & []%in_app_iff & H7); auto.
+      * destruct (H1 x) as (y & []%In_Base_app_iff & H7); auto.
         - exists (x::m1), m2; repeat split; simpl; eauto.
           intros ? [ <- | ]; eauto.
         - exists m1, (x::m2); repeat split; auto.
           intros ? [ <- | ]; eauto.
   Qed.
 
-  Fact fimage_upclosed_perm_left k : upclosed (λ l m, l ~ₚ m) (λ l, T† l k).
+  Fact fimage_upclosed_perm_left k : upclosed (λ l m, l ~ₜ m) (λ l, T† l k).
   Proof. intros ? ? ? H ? (? & [])%H; eauto. Qed.
 
   Fact Forall_upclosed_fimage P : upclosed T P → upclosed T† ⋀₁P.
   Proof.
-    intros ? ? ? H; do 2 rewrite Forall_forall.
+    intros ? ? ? H; do 2 rewrite Forall_forall_In_Base.
     intros ? ? (? & [])%H; eauto.
   Qed.
 
@@ -704,11 +694,11 @@ Section FAN_cover.
   (** We give an original proof of a quite general formulation of
       the FAN theorem for cover inductive predicates. *)
 
-  Variable (X : Type) (T : rel₂ X) (P : rel₁ X) (HP : upclosed T P).
+  Variables (X : Type) (T : X → X → Base) (P : rel₁ X) (HP : upclosed T P).
 
   Hint Resolve fimage_upclosed_perm_left Forall_upclosed_fimage Forall_upclosed_perm cover_upclosed : core.
 
-  Fact cover_fimage_Forall_upclosed_perm : upclosed (λ l m, l ~ₚ m) (cover T† ⋀₁P).
+  Fact cover_fimage_Forall_upclosed_perm : upclosed (λ l m, l ~ₜ m) (cover T† ⋀₁P).
   Proof. intros l m H1 H2; revert H2 m H1; induction 1; eauto. Qed.
 
   Hint Resolve fimage_sg_r : core.
@@ -721,8 +711,8 @@ Section FAN_cover.
     induction 1 as [ l Hl | ] in r |- *.
     + induction 1 in l, Hl |- *; eauto.
       * constructor 1; apply Forall_app; eauto.
-      * constructor 2; intros ? (? & ? & ?%Permutation_sym & [])%fimage_split_inv; eauto.
-    + constructor 2; intros ? (? & ? & ?%Permutation_sym & [])%fimage_split_inv; eauto.
+      * constructor 2; intros ? (? & ? & ?%Permutation_Base_sym & [])%fimage_split_inv; eauto.
+    + constructor 2; intros ? (? & ? & ?%Permutation_Base_sym & [])%fimage_split_inv; eauto.
   Qed.
 
   Corollary cover_fimage_Forall_cons x m : cover T† ⋀₁P [x] → cover T† ⋀₁P m → cover T† ⋀₁P (x::m).
@@ -732,8 +722,8 @@ Section FAN_cover.
                fimage_in_r_inv
                cover_fimage_Forall_cons : core.
 
-  Corollary cover_fimage_Forall l : (∀x, x ∈ l → cover T† ⋀₁P [x]) → cover T† ⋀₁P l.
-  Proof. rewrite <- Forall_forall; induction 1; eauto. Qed.
+  Corollary cover_fimage_Forall l : (∀x, x ∈ₜ l → cover T† ⋀₁P [x]) → cover T† ⋀₁P l.
+  Proof. induction l; simpl; intro; eauto; apply cover_fimage_Forall_cons; eauto. Qed.
 
   (* If x is in the T-cover of P then [x] is in the T†-cover of ⋀₁P
      hence P will be satisfied uniformly over all the iterates of
@@ -750,13 +740,9 @@ Section FAN_cover.
 
   Hint Resolve FAN_cover : core.
 
-  Theorem FAN_cover_many : ⋀₁(cover T P) ⊆₁ cover T† ⋀₁P.
-  Proof.
-    intros l Hl; apply cover_fimage_Forall.
-    rewrite Forall_forall in Hl.
-    eauto.
-  Qed.
-
+  Theorem FAN_cover_many l : (∀x, x ∈ₜ l → cover T P x) → cover T† ⋀₁P l.
+  Proof. intros Hl; apply cover_fimage_Forall; eauto. Qed.
+ 
   (** This characterization looks like the characterization
       of Accessibility wrt. to e.g. list ordering, such as
 
@@ -765,16 +751,16 @@ Section FAN_cover.
       Remark by DLW: remains to be further investigated,
         could Acc_lo_iff be derived from cover_fimage_iff below ? *)
 
-  Fact cover_fimage_Forall_Forall l : cover T† ⋀₁P l → ∀x, x ∈ l → cover T P x.
+  Fact cover_fimage_Forall_Forall l : cover T† ⋀₁P l → ∀x, x ∈ₜ l → cover T P x.
   Proof. 
     induction 1 as [ l Hl | ]; eauto.
-    rewrite Forall_forall in Hl; auto.
+    rewrite Forall_forall_In_Base in Hl; eauto.
   Qed.
 
   Hint Resolve FAN_cover_many cover_fimage_Forall_Forall : core.
 
-  Theorem cover_fimage_iff l : cover T† ⋀₁P l ↔ ∀x, x ∈ l → cover T P x.
-  Proof. split; eauto; rewrite <- Forall_forall; auto. Qed.
+  Theorem cover_fimage_iff l : cover T† ⋀₁P l ⇄ₜ ∀x, x ∈ₜ l → cover T P x.
+  Proof. split; auto; apply cover_fimage_Forall_Forall. Qed.
 
 End FAN_cover.
 
@@ -837,7 +823,7 @@ Section extends.
 
   Implicit Type (l : list X).
 
-  Inductive extends l : list X → Prop :=
+  Inductive extends l : list X → Base :=
     | extends_intro x : extends l (x::l).
 
   Hint Constructors extends : core.
@@ -850,7 +836,7 @@ Section extends.
       end.
   Proof. now induction 1. Qed.
 
-  Fact extends_iff l m : extends l m ↔ ∃x, m = x::l.
+  Fact extends_iff l m : extends l m ⇄ₜ ∃ₜ x, m = x::l.
   Proof.
     split.
     + induction 1; eauto.
@@ -877,7 +863,7 @@ Section extends.
   Qed. 
 
   (* And conversely *)
-  Fact pfx_extends (ρ : nat → X) : pfx ρ 0 = [] ∧ ∀n, extends (pfx ρ n) (pfx ρ (S n)).
+  Fact pfx_extends (ρ : nat → X) : pfx ρ 0 = [] ∧ₜ ∀n, extends (pfx ρ n) (pfx ρ (S n)).
   Proof. split; constructor. Qed.
 
 End extends.
@@ -895,23 +881,23 @@ Section bar.
 
   Variables (X : Type).
 
-  Implicit Type (P Q : rel₁ (list X)) (l : list X).
+  Implicit Type (P Q : rel₁ (list X)) (l : list X) (K : list X → Base).
 
   (* Monotone is just an instance of upward-closed *)
-  Fact upclosed_extends_iff_monotone P : upclosed extends P ↔ monotone P.
+  Fact upclosed_extends_iff_monotone K : upclosed extends K ⇄ₜ monotone K.
   Proof.
     split.
     + intros H ? ?; apply H; constructor.
     + induction 2; auto.
   Qed.
 
-  Inductive bar P l : Prop :=
+  Inductive bar P l : Base :=
     | bar_stop : P l → bar P l
     | bar_next : (∀x, bar P (x::l)) → bar P l.
 
   Hint Constructors bar : core.
 
-  Fact bar_iff_cover_extends P l : bar P l ↔ cover extends P l.
+  Fact bar_iff_cover_extends P l : bar P l ⇄ₜ cover extends P l.
   Proof.
     split.
     + induction 1; eauto.
@@ -921,48 +907,34 @@ Section bar.
 
   Fact bar_monotone P : monotone P → monotone (bar P).
   Proof.
-    rewrite <- !upclosed_extends_iff_monotone.
+    intros H; apply upclosed_extends_iff_monotone.
+    generalize (snd (upclosed_extends_iff_monotone P) H). 
+    clear H.
     intros H ? ?.
-    rewrite !bar_iff_cover_extends.
-    apply (cover_upclosed H).
+    intros G1 G2%bar_iff_cover_extends; apply bar_iff_cover_extends.
+    revert G1 G2; apply (cover_upclosed H).
   Qed.
 
   Fact bar_mono P Q : P ⊆₁ Q → bar P ⊆₁ bar Q.
   Proof. 
     intros ? ?.
-    rewrite !bar_iff_cover_extends.
+    intros G%bar_iff_cover_extends; apply bar_iff_cover_extends; revert G.
     apply cover_mono; auto.
   Qed.
 
-  Fact bar_negative P : bar P [] → ∀Q, Q [] → (∀l, Q l → ∃x, Q (x::l)) → ∃l, P l ∧ Q l.
+  Fact bar_negative P : bar P [] → ∀K, K [] → (∀l, K l → ∃ₜ x, K (x::l)) → ∃ₜ l, P l ∧ₜ K l.
   Proof.
     intros H%bar_iff_cover_extends Q H1 H2. 
     apply (cover_negative H); eauto.
     intros ? (? & ?)%H2; eauto.
   Qed.
 
-  Fact bar_sequences P : bar P [] → ∀α, ∃n, P (pfx α n).
+  Fact bar_sequences P : bar P [] → ∀α, ∃ₜ n, P (pfx α n).
   Proof.
     intros H%bar_iff_cover_extends α.
     destruct cover_sequences
       with (ρ := λ n, pfx α n) (1 := H); eauto.
     constructor.
-  Qed.
-
-  Hypothesis (xm : XM) (dc : ∀X, DC X).
-
-  Theorem Brouwer_bar_XM_DC P : bar P [] ↔ ∀α, ∃n, P (pfx α n).
-  Proof.
-    rewrite bar_iff_cover_extends, cover_seq_characterization_XM_DC; auto.
-    split.
-    + intros H α.
-      destruct (H (pfx α)); eauto.
-      constructor.
-    + intros H ρ H1 H2.
-      destruct extends_pfx with (2 := H2)
-        as (α & Hα); auto.
-      destruct (H α) as (n & Hn).
-      exists n; now rewrite Hα.
   Qed.
 
 End bar.
@@ -975,7 +947,7 @@ Arguments bar {_}.
     which is equivalent to Kuratowsky finiteness *)
 
 (* P is a finite predicate if it is listable *)
-Definition finite {X} (P : rel₁ X) := ∃l, ∀x, P x ↔ x ∈ l.
+Definition finite {X} (P : rel₁ X) := ∃ₜ l, ∀x, P x ↔ x ∈ l.
 
 (* The carrier of a list is finite, by definition *)
 Fact finite_in X (l : list X) : finite (λ x, x ∈ l).
@@ -998,8 +970,8 @@ Lemma finite_compose X Y (P : rel₁ X) (R : X → Y → Prop) :
       → finite (λ y, ∃x, R x y ∧ P x).
 Proof.
   intros (l & Hl) HR.
-  assert (∀x, x ∈ l → finite (R x)) as (m & Hm)%forall_ex_Forall2.
-  + intros; now apply HR, Hl.
+  assert (∀x, x ∈ₜ l → finite (R x)) as (m & Hm)%forall_ex_Forall2_Base.
+  + intros; apply HR, Hl, In_iff_inhabited_In_Base; auto.
   + exists (concat m).
     intros y; rewrite in_concat; split.
     * intros (x & H1 & H2%Hl).
@@ -1043,19 +1015,52 @@ Proof. apply finite_Forall2_rev; eauto. Qed.
 (** Construction of the generic product and exponential 
     for lists, ie compute/spec of the list of choice lists,
     ake the concrete FAN is found in D. Fridlender's paper *)
+    
+Fact In_Base_map X Y (f : X → Y) x l : x ∈ₜ l → f x ∈ₜ map f l.
+Proof. induction l; simpl; intros []; subst; eauto. Qed.
+
+#[local] Hint Resolve In_Base_map : core.
+#[local] Hint Constructors sum prod : core.
+
+Fact In_Base_map_iff  X Y (f : X → Y) y l : y ∈ₜ map f l ⇄ₜ ∃ₜ x, y = f x ∧ₜ x ∈ₜ l.
+Proof.
+  split.
+  + induction l as [ | ? ? IHl ]; simpl; intros []; subst; eauto.
+    destruct IHl as (? & []); subst; eauto.
+  + intros (? & -> & ?); eauto.
+Qed.
+
+Fact In_Base_flat_map_iff X Y (f : X → list Y) l y : y ∈ₜ flat_map f l ⇄ₜ ∃ₜ x, x ∈ₜ l ∧ₜ y ∈ₜ f x.
+Proof.
+  split.
+  + induction l as [ | x l IHl ]; simpl.
+    * intros [].
+    * intros [ | (? & [])%IHl ]%In_Base_app_iff; eauto.
+  + induction l as [ | x l IHl ]; simpl.
+    * now intros (? & []).
+    * intros (? & [] & ?); apply In_Base_app_iff; subst; eauto.
+Qed.
 
 Section list_prod.
 
   Variables (X Y Z : Type) (p : X → Y → Z).
 
   Definition list_prod l m := flat_map (λ x, map (p x) m) l.
-
-  Fact list_prod_spec l m z : (∃ x y, z = p x y ∧ x ∈ l ∧ y ∈ m) ↔ z ∈ list_prod l m.
+  
+  Hint Resolve in_map : core.
+  
+  Fact list_prod_spec l m z : z ∈ list_prod l m ↔ ∃ x y, z = p x y ∧ x ∈ l ∧ y ∈ m.
   Proof.
-    unfold list_prod; rewrite in_flat_map; split.
-    + intros (x & ? & -> & []).
-      exists x; rewrite in_map_iff; eauto.
-    + intros (? & ? & (? & <- & ?)%in_map_iff); eauto.
+    unfold list_prod; split.
+    + intros (x & H1 & (? & [])%in_map_iff)%in_flat_map; subst; eauto.
+    + intros (x & ? & -> & []); apply in_flat_map; eauto.
+  Qed.
+
+  Fact list_prod_spec_Base l m z : z ∈ₜ list_prod l m ⇄ₜ ∃ₜ x y, z = p x y ∧ₜ x ∈ₜ l ∧ₜ y ∈ₜ m.
+  Proof.
+    unfold list_prod; split.
+    + intros (x & H1 & (? & [])%In_Base_map_iff)%In_Base_flat_map_iff; subst; eauto.
+    + intros (x & ? & -> & []); apply In_Base_flat_map_iff; eauto.
   Qed.
 
 End list_prod.
@@ -1075,7 +1080,7 @@ Section list_fan.
       | c::lc => list_prod cons c (loop lc)
       end.
 
-  Fact list_fan_spec lc l : FAN lc l ↔ l ∈ list_fan lc.  
+  Fact list_fan_spec lc l : FAN lc l ↔ l ∈ list_fan lc.
   Proof.
     induction lc as [ | c lc IH ] in l |- *; simpl; split.
     + intros ->%Forall2_nil_right_inv; auto.
@@ -1087,7 +1092,7 @@ Section list_fan.
 
   (* list_fan gives an explicit inhabitant of finite (FAN _) *)
   Local Remark list_fan_finite_inhabits lc : finite (FAN lc).
-  Proof. exact (ex_intro _ (list_fan lc) (list_fan_spec lc)). Qed.
+  Proof. exists (list_fan lc); apply list_fan_spec. Qed.
 
   Fact list_fan_cons_inv c lc l : l ∈ list_fan (c::lc) ↔ ∃ x m, l = x::m ∧ x ∈ c ∧ m ∈ list_fan lc.
   Proof.
@@ -1096,9 +1101,16 @@ Section list_fan.
       exists x, m; now rewrite <- list_fan_spec.
     + intros (x & m & -> & ? & ?%list_fan_spec); eauto.
   Qed.
+  
+  Fact list_fan_cons_inv_Base c lc l : l ∈ₜ list_fan (c::lc) ⇄ₜ ∃ₜ x m, l = x::m ∧ₜ x ∈ₜ c ∧ₜ m ∈ₜ list_fan lc.
+  Proof.
+    split.
+    + simpl; intros ?%list_prod_spec_Base; auto.
+    + intro; apply list_prod_spec_Base; auto.
+  Qed.
 
   Fact extends_list_fan l m : extends l m → extends† (list_fan l) (list_fan m).
-  Proof. induction 1; intros ? (? & ? & -> & [])%list_fan_cons_inv; eauto. Qed.
+  Proof. intros [] ? (? & ? & -> & [])%list_fan_cons_inv_Base; eauto. Qed.
 
 End list_fan.
 
@@ -1109,10 +1121,10 @@ Arguments list_fan {_}.
 (** FAN theorem for inductive bars w/o reference to list_fan in its type *)
 Theorem FAN_bar X (P : rel₁ (list X)) : monotone P → bar P [] → bar (λ l, FAN l ⊆₁ P) [].
 Proof.
-  intros HP; rewrite !bar_iff_cover_extends.
-  intros ?%FAN_cover.
+  intros HP HB%bar_iff_cover_extends; apply bar_iff_cover_extends.
+  apply FAN_cover in HB.
   2: now apply upclosed_extends_iff_monotone.
-  revert H.
+  revert HB.
   apply cover_morphism with (f := list_fan); eauto.
   intros l Hl m ?%list_fan_spec.
   rewrite Forall_forall in Hl; auto.
@@ -1130,515 +1142,6 @@ Proof.
   intros lc Hlc; apply Forall_forall.
   now intros ? ?%Hlfan%Hlc.
 Qed.
-
-(** list branching finite trees, ie trees nested with lists *)
-
-Unset Elimination Schemes.
-Inductive tree X : Type :=
-  | node : X → list (tree X) → tree X.
-Set Elimination Schemes.
-
-Arguments node {_}.
-
-#[local] Notation "⟨ x | l ⟩" := (node x l) (at level 0, format "⟨ x | l ⟩").
-
-Fact tree_ind X (P : tree X → Prop) :
-    (∀ x l, (∀ t, t ∈ l → P t) → P ⟨x|l⟩) → ∀t, P t.
-Proof.
-  intros HP.
-  refine (fix tree_ind t := _).
-  destruct t as [ x l ].
-  apply HP.
-  intro t.
-  induction l as [ | r l IH ].
-  + intros [].
-  + intros [ <- | ].
-    * apply tree_ind.
-    * now apply IH.
-Qed.
-
-Section tree_extra.
-
-  Variables X : Type.
-
-  Implicit Type (x : X) (t : tree X).
-
-  Definition root t := match t with ⟨x|_⟩ => x end.
-  Definition sons t := match t with ⟨_|l⟩ => l end.
-
-  Fixpoint tree_ht t := 1+list_max (map tree_ht (sons t)).
-
-  Fact tree_ht_fix x l : tree_ht ⟨x|l⟩ = 1+list_max (map tree_ht l).
-  Proof. reflexivity. Qed.
-
-  Inductive branch : tree X → list X → X → Prop :=
-    | branch_void x l :          branch ⟨x|l⟩ [] x
-    | branch_cons x l y m p z :  ⟨y|m⟩ ∈ l
-                               → branch ⟨y|m⟩ p z
-                               → branch ⟨x|l⟩ (y::p) z.
-
-  Hint Constructors branch : core.
-
-  Fact branch_inv t p z :
-       branch t p z
-     → match p with
-       | []   => root t = z
-       | y::p => ∃s, s ∈ sons t ∧ root s = y ∧ branch s p z
-       end.
-  Proof. destruct 1; eauto. Qed.
-
-  Fact branch_nil_inv t z : branch t [] z ↔ root t = z.
-  Proof.
-    split.
-    + apply branch_inv.
-    + intros <-; destruct t; auto.
-  Qed.
-
-  Fact branch_cons_inv t y p z :
-      branch t (y::p) z ↔ ∃s, s ∈ sons t ∧ root s = y ∧ branch s p z.
-  Proof.
-    split.
-    + apply branch_inv.
-    + destruct t; simpl; intros ([] & ? & <- & ?); eauto.
-  Qed.
-
-  Fact branch_length_tree_ht t p z : branch t p z → ⌊p⌋ < tree_ht t.
-  Proof.
-    induction 1 as [ | ? ? ? ? ? ? ? ? IH ]; simpl; [ lia | ].
-    rewrite <- Nat.succ_lt_mono.
-    apply Nat.lt_le_trans with (1 := IH),
-          list_max_in,
-          in_map_iff; eauto.
-  Qed.
-
-  (* If X has (weakly) decidable equality then branch is a
-     (weakly) decidable predicate *)
-  Lemma branch_wdec : (∀ x y, wdec (x = y)) → ∀ t p y, wdec (branch t p y).
-  Proof.
-    intros eqdec t.
-    induction t as [ x l IH ].
-    intros [ | y p ] z.
-    + destruct (eqdec z x) as [ <- | ]; auto.
-      right; intros <-%branch_inv; auto.
-    + destruct list_wchoose 
-        with (l := l) 
-             (P := λ s, root s = y ∧ branch s p z)
-             (Q := λ s, ~ (root s = y ∧ branch s p z))
-        as [ ([k m] & H1 & <- & H3) | C ]; eauto.
-      * intros u Hu.
-        destruct (eqdec (root u) y) as [ <- | C ].
-        2: right; intros []; auto.
-        destruct (IH _ Hu p z); tauto.
-      * right.
-        intros (s & H1 & <- & H3)%branch_inv.
-        apply (C s); eauto.
-  Qed.
-
-End tree_extra.
-
-Arguments root {_}.
-Arguments sons {_}.
-Arguments tree_ht {_}.
-Arguments branch {_}.
-
-#[local] Hint Constructors branch : core.
-
-(** Paths in a graph represented by a binary relation *)
-
-Section path.
-
-  Variable (X : Type).
-
-  Implicit Type (T : rel₂ X) (P : rel₁ X) (x : X).
-
-  (* Path in a graph (binary relation): path x p y means that
-     p is the list of visited vertices after x and up to y *)
-  Inductive path T : X → list X → X → Prop :=
-    | path_void x :       path T x [] x
-    | path_cons x y p z : T x y
-                        → path T y p z
-                        → path T x (y::p) z.
-
-  Hint Constructors path : core.
-
-  Fact path_inv T x p z :
-       path T x p z
-     → match p with
-       | []   => x = z
-       | y::p => T x y ∧ path T y p z
-       end.
-  Proof. destruct 1; eauto. Qed.
-
-  Fact path_app T x p y q z : path T x p y → path T y q z → path T x (p++q) z.
-  Proof. induction 1; simpl; eauto. Qed.
-
-  Fact path_app_inv T x p q z : path T x (p++q) z → ∃y, path T x p y ∧ path T y q z.
-  Proof.
-    induction p as [ | ? ? IH ] in x |- *; simpl; eauto.
-    intros (? & (? & [])%IH)%path_inv; eauto.
-  Qed.
-
-  Fact path_nil_inv T x y : path T x [] y ↔ x = y.
-  Proof.
-    split.
-    + apply path_inv.
-    + intros ->; eauto.
-  Qed.
-
-  Fact path_cons_inv T x y p z : path T x (y::p) z ↔ T x y ∧ path T y p z.
-  Proof.
-    split.
-    + apply path_inv.
-    + intros []; eauto.
-  Qed.
-
-  Hint Resolve path_app : core.
-
-  Fact path_snoc_inv T x p a z : path T x (p++[a]) z ↔ ∃y, path T x p y ∧ T y z ∧ a = z.
-  Proof. 
-    split.
-    + intros (? & ? & (? & ->%path_inv)%path_inv)%path_app_inv; eauto. 
-    + intros (? & ? & ? & ->); eauto.
-  Qed.
-
-  Fact upclosed_path T P : upclosed T P → upclosed (λ x y, ∃p, path T x p y) P.
-  Proof. intros ? ? ? (? & H); induction H; eauto. Qed.
-
-  Section path_monotone.
-
-    Variables (T : rel₂ X)
-              (Q : list X → X → Prop)
-              (HQ : ∀ p x y, T x y → Q p x → Q (p++[y]) y).
-
-    Fact path_monotone p q x y : path T x q y → Q p x → Q (p++q) y.
-    Proof.
-      induction q as [ | ] using rev_ind in y |- *.
-      + rewrite app_nil_r; now intros <-%path_inv.
-      + intros (? & ? & ? & ->)%path_snoc_inv ?.
-        rewrite app_assoc; eauto.
-    Qed.
-
-  End path_monotone.
-
-  Lemma path_wdec T :
-      (∀x, finite (T x))
-    → (∀ x y, wdec (x = y))
-    → (∀ x p y, wdec (path T x p y)).
-  Proof.
-    intros HT eqdec x p z.
-    induction p as [ | y p IHp ] in x |- *.
-    + destruct (eqdec x z) as [ <- | C ]; eauto.
-      right; now intros <-%path_inv.
-    + destruct (HT x) as (l & Hl).
-      destruct (list_in_wdec l (fun z _ => eqdec y z))
-        as [ ?%Hl | ].
-      2: right; now intros [ ?%Hl _ ]%path_inv.
-      destruct (IHp y); eauto.
-      right; now intros[]%path_inv.
-  Qed.
-
-End path.
-
-Arguments path {_}.
-
-#[local] Hint Constructors path : core.
-
-Section representation_of_relations_by_trees.
-
-  (** When the length of paths is bounded,
-      the paths from x of a finitary relation
-      are representable by the branches
-      of tree rooted with x. *)
-
-  Variables (X : Type).
-
-  Implicit Type (T : rel₂ X) (x : X).
-
-  (* The notion of representation that comes to mind first. *)
-  Definition strongly_represents T P x t :=
-      root t = x
-    ∧ ∀ p y, branch t p y ↔ path T x p y ∧ P p y.
-
-  (** strong_represents is too strong as it entails
-      that P is weakly decidable on T-paths from x,
-      when X is a discrete type, eg when X = nat *)
-  Lemma strongly_represents_entails_wdec T P x t :
-       (∀ x y, wdec (x = y))
-     → strongly_represents T P x t
-     → ∀ p y, path T x p y → wdec (P p y).
-  Proof.
-    intros eqdec (_ & E) p y Hp.
-    destruct (branch_wdec eqdec t p y) as [ []%E | H ]; auto.
-    rewrite E in H; tauto.
-  Qed.
-
-  (** So we favor this definition for representation
-      of the relation T at root x by a tree, on the
-      paths that satisfy P. 
-
-      This means that t may contain branches that
-      do not satisfy P. *)
-  Definition represents T P x t :=
-      root t = x
-    ∧ ∀ p y, P p y → (branch t p y ↔ path T x p y ).
-
-  (* A strong representation is a representation *)
-  Fact strongly_represents__represents T P x :
-      strongly_represents T P x ⊆₁ represents T P x.
-  Proof. 
-    intros ? (? & H); split; auto.
-    intros ? ? ?; rewrite H; tauto.
-  Qed.
-
-  Variables (T : rel₂ X) (Tfin : ∀x, finite (T x)).
-
-  (** length bounded path can be strongly represented
-      because this is a (weakly) decidable predicate *)
-  Theorem bounded_length_strongly_represented n x :
-       ∃t, strongly_represents T (λ p _, ⌊p⌋ ≤ n) x t.
-  Proof.
-    induction n as [ | n IHn ] in x |- *.
-    + exists ⟨x|[]⟩; split; simpl; auto.
-      intros p y; split.
-      * destruct p; intros H%branch_inv; subst; simpl; auto.
-        destruct H as (_ & [] & _).
-      * destruct p; intros (?%path_inv & ?); simpl in *; subst; auto; lia.
-    + destruct (Tfin x) as [ lx Hlx ].
-      set (R x t := strongly_represents T (λ p _, ⌊p⌋ ≤ n) x t).
-      destruct (forall_ex_Forall2 R lx) as (lt & Hlt); eauto.
-      exists ⟨x|lt⟩; split; auto.
-      intros [ | y l ] z; split.
-      * intros <-%branch_inv; simpl; split; auto; lia.
-      * intros (<-%path_inv & _); auto.
-      * intros (s & Hs & <- & H2)%branch_inv; simpl in Hs |- *.
-        destruct (Forall2_in_right_inv Hlt Hs) as (y & H3 & <- & H4).
-        apply H4 in H2 as [].
-        split; try lia.
-        constructor 2; auto.
-        now apply Hlx.
-      * simpl; intros ((H1%Hlx & H2)%path_inv & H3).
-        destruct (Forall2_in_left_inv Hlt H1) as ([y' m] & ? & ? & G); subst; simpl; eauto.
-        constructor 2 with m; auto.
-        apply G; split; auto; lia.
-  Qed.
-
-  (** (T,P,x) is represented iff T-paths from x that satisfy P have
-      a (globally) bounded length *)
-  Theorem finitary_represented_iff_bounded P x :
-       (∃t, represents T P x t)
-     ↔ (∃n, ∀ p y, path T x p y → P p y → ⌊p⌋ < n).
-  Proof.
-    split.
-    + intros (t & <- & Ht).
-      exists (tree_ht t).
-      intros p y H1 H2.
-      apply Ht in H1; auto.
-      revert H1; apply branch_length_tree_ht.
-    + intros (n & Hn).
-      destruct (bounded_length_strongly_represented n x)
-        as (t & <- & Ht).
-      exists t; split; auto.
-      intros p y Hp; split.
-      * now intros []%Ht.
-      * intros ?; apply Ht; split; auto.
-        eapply Hn in H; eauto; lia.
-  Qed.
-
-  Variables (x : X) (P : list X → X → Prop)
-            (HP1 : ∀ p y z, T y z → P p y → P (p++[z]) z)
-            (n : nat) (Hn : ∀ p y, path T x p y → n = ⌊p⌋ → P p y).
-
-  Local Lemma paths_outside_circle p y : path T x p y → n ≤ ⌊p⌋ → P p y.
-  Proof.
-    intros H2 H3.
-    destruct list_length_split
-      with (m := p) (a := n) (b := ⌊p⌋-n)
-      as (l & r & -> & H4 & H5); [ lia | clear H3 H5 ].
-    apply path_app_inv in H2 as (z & H6 & H7).
-    apply path_monotone with (2 := H7); eauto.
-  Qed.
-
-  Hint Resolve paths_outside_circle : core.
-
-  Lemma short_paths p y : path T x p y → ¬ P p y → ⌊p⌋ < n.
-  Proof.
-    intros H1 H2.
-    destruct (le_lt_dec n ⌊p⌋); auto.
-    destruct H2; eauto.
-  Qed.
-
-End representation_of_relations_by_trees.
-
-Arguments represents {X}.
-
-Section konig_cover.
-
-  Variables (X : Type)
-            (T : rel₂ X) (Tfin : ∀x, finite (T x)) 
-            (P : rel₁ X) (Pupc : upclosed T P) 
-            (x : X) (Hx : cover T P x).
-
-  (* The circle of radius n: the points T-reachable from x with paths of length n *)
-  Local Definition circle n := λ y, ∃p, path T x p y ∧ n = ⌊p⌋.
-
-  (* There is only x on the circle of radius 0 *)
-  Local Fact circle_0_spec z : circle 0 z ↔ x = z.
-  Proof.
-    split.
-    + now intros ([] & ?%path_inv & ?).
-    + intros <-; exists []; auto.
-  Qed.
-
-  (* circle (S n) is at one T-transition from circle n *)
-  Local Fact circle_S_spec n z : circle (S n) z ↔ ∃y, T y z ∧ circle n y.
-  Proof.
-    split.
-    + intros (p & H1 & H2).
-      destruct p as [ | a p _ ] using rev_ind; [ easy | ].
-      apply path_snoc_inv in H1 as (y & H3 & H4 & ->).
-      exists y; split; auto.
-      exists p; split; auto.
-      rewrite app_length in H2; simpl in H2; lia.
-    + intros (y & H1 & p & H2 & H3).
-      exists (p++[z]); split.
-      * eapply path_app; eauto.
-      * rewrite app_length; simpl; lia.
-  Qed.
-
-  (* Each circle is finite *)
-  Local Lemma circle_finite n : finite (circle n).
-  Proof.
-    induction n.
-    + apply finite_equiv with (1 := circle_0_spec), finite_eq.
-    + apply finite_equiv with (1 := circle_S_spec _), finite_compose; eauto.
-  Qed.
-
-  (* Q is the set of lists l that collect one circle,
-     ie it is the collection of all the list representations
-     of the circle of radius n for some n *)
-  Let Q l := ∃n, ∀x, circle n x ↔ x ∈ l.
-
-  (* There is a list (collecting some circle n) which satisfies ⋀₁P,
-     ie which meets P uniformly. We use cover_negative here !!*)
-  Local Lemma Q_meets_Forall_P : ∃l, ⋀₁P l ∧ Q l.
-  Proof.
-    apply cover_negative with (x := [x]) (T := T†).
-    + apply FAN_cover; auto.
-    + exists 0; intro; rewrite circle_0_spec; simpl; tauto.
-    + intros l (n & Hn).
-      destruct (circle_finite (S n)) as (m & Hm).
-      exists m; split.
-      * now exists (S n).
-      * intros ? (? & ? & ?%Hn)%Hm%circle_S_spec; eauto.
-  Qed.
-
-  (* There is a circle in P *)
-  Local Corollary P_contains_some_circle : ∃n, circle n ⊆₁ P.
-  Proof.
-    destruct Q_meets_Forall_P as (l & H1 & n & H2).
-    rewrite Forall_forall in H1.
-    exists n.
-    intros ? ?%H2; auto.
-  Qed.
-
-  (* As a consequence, the paths which do not end in P are those of a finite tree *)
-  Theorem konig_cover : ∃t, represents T (λ _ y, ¬ P y) x t.
-  Proof.
-    apply finitary_represented_iff_bounded; auto.
-    destruct P_contains_some_circle as (n & Hn).
-    exists n.
-    apply short_paths; auto.
-    intros p ? ? ?; apply Hn; now exists p.
-  Qed.
-
-End konig_cover.
-
-Check konig_cover.
-
-(** The finitary version of König's lemma w/o XM or choice 
-    see https://fr.wikipedia.org/wiki/Lemme_de_K%C3%B6nig
-    and https://books.google.fr/books?id=N7BvXVUCQk8C&printsec=frontcover&redir_esc=y#v=onepage&q&f=false *)
-
-Section acc_rel.
-
-  Variables (X : Type)
-            (T : rel₂ X) (Tfin : ∀x, finite (T x))
-            (x : X) (Hx : acc T x).
-
-  Theorem konig_acc : ∃t, root t = x ∧ ∀ p y, branch t p y ↔ path T x p y .
-  Proof.
-    destruct konig_cover
-      with (1 := Tfin) (P := λ _ : X, ⊥) (x := x)
-      as (? & []); eauto.
-    now apply acc_iff_cover_empty in Hx.
-  Qed.
-
-End acc_rel.
-
-Check konig_acc.
-
-Section konig_bar.
-
-  Variables (X : Type)
-            (T : rel₂ X) (Tfin : ∀x, finite (T x))
-            (P : rel₁ (list X)) (Pmono : monotone P)
-            (Hr : bar P []).
-
-  (* The circle of center x and of radius n is contained in a list *)
-  Local Fact circle_bounded n x : ∃lp, ∀p y, path T x p y → ⌊p⌋ = n → y ∈ lp.
-  Proof.
-    destruct (circle_finite _ Tfin x n) as (lp & Hlp).
-    exists lp.
-    intros p y H1 H2; apply Hlp; exists p; auto.
-  Qed.
-
-  (* Q x lc if every path from the center x to a point on the circle
-     of radius ⌊lc⌋ is a choice list for lc, ie FAN lc includes all the
-     paths from x of length ⌊lc⌋. *)
-  Let Q x lc := ∀ p y, path T x p y → ⌊p⌋ = ⌊lc⌋ → FAN lc (rev p).
-
-  (* There is a choice list of P-accepted paths (read reversed) which
-     includes all the paths from x of that given length.
-     We use bar_negative here !! *)
-  Local Lemma choice_list_in_P_meets_Q x : ∃lc, FAN lc ⊆₁ P ∧ Q x lc.
-  Proof.
-    apply bar_negative with (Q := Q x).
-    + now apply FAN_bar.
-    + now intros []; simpl; auto.
-    + intros lc Hlc.
-      destruct (circle_bounded (1+⌊lc⌋) x) as (l & Hl).
-      exists l; intros p.
-      destruct p as [ | z p _ ] using rev_ind; try easy.
-      rewrite app_length; simpl.
-      intros y (u & ? & ? & ->)%path_snoc_inv E.
-      rewrite rev_app_distr; simpl; constructor.
-      * apply Hl with (p++[y]); auto.
-        - apply path_app with u; eauto.
-        - now rewrite app_length.
-      * red in Hlc; eapply Hlc; eauto; lia.
-  Qed.
-
-  (* P contains all the paths from x to points on a circle *)
-  Local Corollary P_contains_some_disk x : ∃n, ∀p y, path T x p y → n = ⌊p⌋ → P (rev p).
-  Proof.
-    destruct (choice_list_in_P_meets_Q x) as (lc & H & ?).
-    exists ⌊lc⌋.
-    intros ? ? ? ?; apply H; eauto.
-  Qed.
-
-  (* Hence, only short paths can satisfy ¬ P *)
-  Theorem konig_bar x : ∃t, represents T (λ p _, ¬ P (rev p)) x t.
-  Proof.
-    apply finitary_represented_iff_bounded; auto.
-    destruct (P_contains_some_disk x) as (n & Hn).
-    exists n.
-    apply short_paths; auto.
-    intros; rewrite rev_app_distr; simpl; auto.
-  Qed.
-
-End konig_bar.
-
-Check konig_bar.
 
 (** Conclude with almost full relations and irredundant sequences *)
 
@@ -1730,7 +1233,7 @@ Section af.
 
   Implicit Type (R : rel₂ X).
 
-  Inductive af R : Prop :=
+  Inductive af R : Base :=
     | af_full : (∀ x y, R x y) → af R
     | af_lift : (∀u, af R↑u) → af R.
 
@@ -1796,7 +1299,7 @@ Section choice_list.
     rewrite IHl; tauto.
   Qed.
 
-  Fact choice_list_snoc P l x : choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
+  Fact choice_list_snoc P l x :  choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
   Proof.
     rewrite choice_list_app; simpl.
     rewrite Nat.add_0_r; tauto.
@@ -1865,10 +1368,10 @@ Section af_konig_choice.
      in those supports in good R. 
 
      As a consequence, any choice list for P of length ⌊lc⌋ is good R *)
-  Local Lemma good_uniform_over_FAN : ∃n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
+  Local Lemma good_uniform_over_FAN : ∃ₜ n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
   Proof.
     destruct (bar_negative bar_good_FAN)
-      with (Q := λ lc, choice_list support (rev lc))
+      with (K := λ lc, choice_list support (rev lc))
       as (lc & H1 & H2).
     + now simpl.
     + intros l Hl.
@@ -1887,7 +1390,7 @@ Section af_konig_choice.
 
   (* So good R is met uniformly at length n over choice lists for P,
      irredundant choice lists must be shorter than n *) 
-  Theorem af_konig_choice : ∃n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
+  Theorem af_konig_choice : ∃ₜ n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
   Proof.
     destruct good_uniform_over_FAN as (n & Hn).
     exists n; intros l H1 H2%not_good_iff_irred.
