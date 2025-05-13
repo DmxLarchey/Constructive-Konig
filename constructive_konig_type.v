@@ -10,8 +10,35 @@
 (** This is the Type-bounded version of the cover, bar and af predicates
     that carry computational information for the computation of
     the FAN functional. 
+    
+    We get the following types for cover, bar and af:
+    
+       cover {X} (T : X → X → Type) (P : X → Prop) (x : X) : Type
+       bar {X} (P : list X → Prop) (l : list X) : Type
+       af {X} (R : X → X → Prop) : Type
+    
+    The sequential interpretation now look like:
+    
+     cover_sequences: cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → { n | P ρₙ }.
+     bar_sequences: bar P [] → ∀α, { n | P [αₙ₋₁;...;α₀] }.
+     af_sequences: af R → ∀α, { n | ∃ i j, i < j < n ∧ R αᵢ αⱼ }
+     
+    and we see the output of the FAN functional as { n | property of n } 
+    
+    The FAN for cover has exactly the same shape
+    
+     FAN_cover x : cover T P x → cover T† ⋀₁P [x]
+     
+    but the finitary image T† now has type T† : list X → list X → Type,
+    as it records the position of images in the image list:
+    
+        T† l m := ∀y, y ∈ₜ m → { x : X & x ∈ₜ l ∧ₜ T x y }
+    
+    where y ∈ₜ m is the type of occurences of y in m. So T† l m
+    read as the type of maps from occurences in m to a T related
+    occurences in l.
 
-    What need conversions:
+    The needed conversions:
     - the list membership predicate denoted x ∈ l below
       now has a Type-bounded counterpart denoted x ∈ₜ l
       which contain not only the information of membership
@@ -55,7 +82,7 @@ Set Implicit Arguments.
 #[local] Reserved Notation "x '∨ₜ' y" (at level 80, right associativity).
 #[local] Reserved Notation "x '∧ₜ' y" (at level 80, right associativity).
 #[local] Reserved Notation "P '⇄ₜ' Q" (at level 95, no associativity).
-#[local] Reserved Notation "'∃ₜ' x .. y , p" (at level 200, x binder, right associativity).
+#[local] Reserved Notation "'Σₜ' x .. y , p" (at level 200, x binder, right associativity).
 
 #[local] Reserved Notation "x ∈ₜ l" (at level 70, no associativity, format "x  ∈ₜ  l").
 #[local] Reserved Notation "l ~ₜ m" (at level 70, no associativity, format "l  ~ₜ  m").
@@ -68,7 +95,7 @@ Module Base_is_Type.
 
   Notation Base := Type (only parsing).
   Notation Absurd := Empty_set (only parsing).  (* ⊥ₜ *)
-  Notation DepSum := sigT (only parsing).       (* ∃ₜ *)
+  Notation DepSum := sigT (only parsing).       (* Σₜ *)
   Notation NonDepSum := sum (only parsing).     (* ∨ₜ *)
   Notation NonDepProd := prod (only parsing).   (* ∧ₜ *)
 
@@ -79,7 +106,7 @@ Import Base_is_Type.
 #[local] Notation "⊥ₜ" := Absurd (only parsing) : type_scope.
 #[local] Notation "x ∨ₜ y" := (NonDepSum x y) (only parsing) : type_scope.
 #[local] Notation "x ∧ₜ y" := (NonDepProd x y) (only parsing) : type_scope.
-#[local] Notation "∃ₜ x .. y , p" := (DepSum (fun x => .. (DepSum (fun y => p)) ..)) (only parsing) : type_scope.
+#[local] Notation "'Σₜ' x .. y , p" := (DepSum (fun x => .. (DepSum (fun y => p)) ..)) (only parsing) : type_scope.
 #[local] Notation "P ⇄ₜ Q" := ((P → Q) ∧ₜ (Q → P))%type (only parsing) : type_scope.
 
 (* False and True propositions *)
@@ -255,7 +282,7 @@ Proof.
 Qed.
 
 (* Base-bounded version of the above *)
-Fact forall_ex_Forall2_Base X Y (R : X → Y → Prop) l : (∀x, x ∈ₜ l → ∃ₜ y, R x y) → ∃ₜ m, ⋀₂R l m.
+Fact forall_ex_Forall2_Base X Y (R : X → Y → Prop) l : (∀x, x ∈ₜ l → Σₜ y, R x y) → Σₜ m, ⋀₂R l m.
 Proof.
   induction l as [ | x l IHl ]; intros Hl.
   + exists []; eauto.
@@ -422,7 +449,7 @@ Section cover_extra.
        - K contains x
        - K is T-unstoppable
      then K meets P *)
-  Definition cover_neg T P x := λ K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ T y z) → ∃ₜ y, P y ∧ₜ K y.
+  Definition cover_neg T P x := λ K, K x → (∀y, K y → Σₜ z, K z ∧ₜ T y z) → Σₜ y, P y ∧ₜ K y.
 
   (* The positive characterization implies the negative characterization *)
   Lemma cover_pos__cover_neg T P x : (∀K, cover_pos T P x K) → ∀K, cover_neg T P x K.
@@ -435,19 +462,19 @@ Section cover_extra.
       destruct (H2 _ H1) as (? & []); eauto.
   Qed.
 
-  Theorem cover_negative T P x : cover T P x → ∀K, K x → (∀y, K y → ∃ₜ z, K z ∧ₜ T y z) → ∃ₜ y, P y ∧ₜ K y.
+  Theorem cover_negative T P x : cover T P x → ∀K, K x → (∀y, K y → Σₜ z, K z ∧ₜ T y z) → Σₜ y, P y ∧ₜ K y.
   Proof. intro; now apply cover_pos__cover_neg, cover_iff_cover_pos. Qed.
 
   (* The sequential characterization of cover T P x is ∀ρ, cover_seq T P x ρ.
      This reads as any T-sequence starting at x meets P *)
-  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃ₜ n, P (ρ n).
+  Definition cover_seq T P x := λ ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → Σₜ n, P (ρ n).
 
   (* For a T-sequence ρ starting at x, its direct image 
-     Q := λ x, ∃ₜ n, x = ρ n, satisfies
+     Q := λ x, Σₜ n, x = ρ n, satisfies
        - Q contains x
        - Q is T-unstoppable
      Hence Q meets P, which entails that ρ meets P *)
-  Lemma cover_seq_direct_image T P x ρ : cover_neg T P x (λ x, ∃ₜ n, x = ρ n) → cover_seq T P x ρ.
+  Lemma cover_seq_direct_image T P x ρ : cover_neg T P x (λ x, Σₜ n, x = ρ n) → cover_seq T P x ρ.
   Proof. 
     intros H H1 H2.
     destruct H as (? & ? & ? & ->); eauto.
@@ -457,7 +484,7 @@ Section cover_extra.
   Corollary cover_neg__cover_seq T P x : (∀K, cover_neg T P x K) → ∀ρ, cover_seq T P x ρ.
   Proof. intros H ρ; apply cover_seq_direct_image, H. Qed.
 
-  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → ∃ₜ n, P (ρ n).
+  Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → Σₜ n, P (ρ n).
   Proof. intro; apply cover_neg__cover_seq; unfold cover_neg; now apply cover_negative. Qed.
 
   Section cover_seq__cover_neg__only_when_Base_is_Type.
@@ -510,7 +537,7 @@ End cover_extra.
 
      T† l m if any member of m in a T-image of some member of l *)
 
-Definition fimage {X} (T : X → X → Base) l m := ∀y, y ∈ₜ m → ∃ₜ x, x ∈ₜ l ∧ₜ T x y.
+Definition fimage {X} (T : X → X → Base) l m := ∀y, y ∈ₜ m → Σₜ x, x ∈ₜ l ∧ₜ T x y.
 
 #[local] Notation "T †" := (fimage T) (at level 1, left associativity, format "T †").
 
@@ -540,7 +567,7 @@ Section finitary_image.
   Proof. eauto. Qed.
 
   (* The critical lemma explaining how finite images interact with splitting *)
-  Lemma fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → ∃ₜ m₁ m₂, m ~ₜ m₁++m₂ ∧ₜ T† l₁ m₁ ∧ₜ T† l₂ m₂.
+  Lemma fimage_split_inv l₁ l₂ m : T† (l₁++l₂) m → Σₜ m₁ m₂, m ~ₜ m₁++m₂ ∧ₜ T† l₁ m₁ ∧ₜ T† l₂ m₂.
   Proof.
     induction m as [ | x m IHm ]; intros H1.
     + exists nil, nil; repeat split; auto; intros ? [].
@@ -703,7 +730,7 @@ Section extends.
       end.
   Proof. now induction 1. Qed.
 
-  Fact extends_iff l m : extends l m ⇄ₜ ∃ₜ x, m = x::l.
+  Fact extends_iff l m : extends l m ⇄ₜ Σₜ x, m = x::l.
   Proof.
     split.
     + induction 1; eauto.
@@ -789,14 +816,14 @@ Section bar.
     apply cover_mono; auto.
   Qed.
 
-  Fact bar_negative P : bar P [] → ∀K, K [] → (∀l, K l → ∃ₜ x, K (x::l)) → ∃ₜ l, P l ∧ₜ K l.
+  Fact bar_negative P : bar P [] → ∀K, K [] → (∀l, K l → Σₜ x, K (x::l)) → Σₜ l, P l ∧ₜ K l.
   Proof.
     intros H%bar_iff_cover_extends Q H1 H2. 
     apply (cover_negative H); eauto.
     intros ? (? & ?)%H2; eauto.
   Qed.
 
-  Fact bar_sequences P : bar P [] → ∀α, ∃ₜ n, P (pfx α n).
+  Fact bar_sequences P : bar P [] → ∀α, Σₜ n, P (pfx α n).
   Proof.
     intros H%bar_iff_cover_extends α.
     destruct cover_sequences
@@ -814,7 +841,7 @@ Arguments bar {_}.
     which is equivalent to Kuratowsky finiteness *)
 
 (* P is a finite predicate if it is listable *)
-Definition finite {X} (P : rel₁ X) := ∃ₜ l, ∀x, P x ↔ x ∈ l.
+Definition finite {X} (P : rel₁ X) := Σₜ l, ∀x, P x ↔ x ∈ l.
 
 (* The carrier of a list is finite, by definition *)
 Fact finite_in X (l : list X) : finite (λ x, x ∈ l).
@@ -889,7 +916,7 @@ Proof. induction l; simpl; intros []; subst; eauto. Qed.
 #[local] Hint Resolve In_Base_map : core.
 #[local] Hint Constructors sum prod : core.
 
-Fact In_Base_map_iff  X Y (f : X → Y) y l : y ∈ₜ map f l ⇄ₜ ∃ₜ x, y = f x ∧ₜ x ∈ₜ l.
+Fact In_Base_map_iff  X Y (f : X → Y) y l : y ∈ₜ map f l ⇄ₜ Σₜ x, y = f x ∧ₜ x ∈ₜ l.
 Proof.
   split.
   + induction l as [ | ? ? IHl ]; simpl; intros []; subst; eauto.
@@ -897,7 +924,7 @@ Proof.
   + intros (? & -> & ?); eauto.
 Qed.
 
-Fact In_Base_flat_map_iff X Y (f : X → list Y) l y : y ∈ₜ flat_map f l ⇄ₜ ∃ₜ x, x ∈ₜ l ∧ₜ y ∈ₜ f x.
+Fact In_Base_flat_map_iff X Y (f : X → list Y) l y : y ∈ₜ flat_map f l ⇄ₜ Σₜ x, x ∈ₜ l ∧ₜ y ∈ₜ f x.
 Proof.
   split.
   + induction l as [ | x l IHl ]; simpl.
@@ -923,7 +950,7 @@ Section list_prod.
     + intros (x & ? & -> & []); apply in_flat_map; eauto.
   Qed.
 
-  Fact list_prod_spec_Base l m z : z ∈ₜ list_prod l m ⇄ₜ ∃ₜ x y, z = p x y ∧ₜ x ∈ₜ l ∧ₜ y ∈ₜ m.
+  Fact list_prod_spec_Base l m z : z ∈ₜ list_prod l m ⇄ₜ Σₜ x y, z = p x y ∧ₜ x ∈ₜ l ∧ₜ y ∈ₜ m.
   Proof.
     unfold list_prod; split.
     + intros (x & H1 & (? & [])%In_Base_map_iff)%In_Base_flat_map_iff; subst; eauto.
@@ -959,7 +986,7 @@ Section list_fan.
 
   (* This proof requires more precision than the one given by list_fan_spec
      because we need to know positions in lists, not just memebership *)
-  Fact list_fan_cons_inv_Base c lc l : l ∈ₜ list_fan (c::lc) ⇄ₜ ∃ₜ x m, l = x::m ∧ₜ x ∈ₜ c ∧ₜ m ∈ₜ list_fan lc.
+  Fact list_fan_cons_inv_Base c lc l : l ∈ₜ list_fan (c::lc) ⇄ₜ Σₜ x m, l = x::m ∧ₜ x ∈ₜ c ∧ₜ m ∈ₜ list_fan lc.
   Proof.
     split.
     + simpl; intros ?%list_prod_spec_Base; auto.
@@ -1113,7 +1140,7 @@ Section af.
   (** Base:=Type bounded af R predicate contains computational
       information, ie for any sequence α, one can compute a
       bound under which a good pair must occur *)
-  Lemma af_sequences R : af R → ∀α, ∃ₜ n, ∃ i j, i < j < n ∧ R (α i) (α j).
+  Lemma af_sequences R : af R → ∀α, Σₜ n, ∃ i j, i < j < n ∧ R (α i) (α j).
   Proof.
     intros H%af__bar_good_nil α.
     destruct (bar_sequences H α) as (n & Hn).
@@ -1228,7 +1255,7 @@ Section af_konig_choice.
      in those supports in good R. 
 
      As a consequence, any choice list for P of length ⌊lc⌋ is good R *)
-  Local Lemma good_uniform_over_FAN : ∃ₜ n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
+  Local Lemma good_uniform_over_FAN : Σₜ n, ∀l, choice_list P l → ⌊l⌋ = n → good R (rev l).
   Proof.
     destruct (bar_negative bar_good_FAN)
       with (K := λ lc, choice_list support (rev lc))
@@ -1250,7 +1277,7 @@ Section af_konig_choice.
 
   (* So good R is met uniformly at length n over choice lists for P,
      irredundant choice lists must be shorter than n *) 
-  Theorem af_konig_choice : ∃ₜ n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
+  Theorem af_konig_choice : Σₜ n, ∀l, choice_list P l → irred R l → ⌊l⌋ < n.
   Proof.
     destruct good_uniform_over_FAN as (n & Hn).
     exists n; intros l H1 H2%not_good_iff_irred.
