@@ -11,9 +11,9 @@
 
 # Constructive substitutes for König's lemma (artifact)
 
-This project is composed of a Coq artifact for the TYPES 2024 post-proceedings submission
+This project is composed of the Coq artifact for the TYPES 2024 post-proceedings paper
 [_Constructive substitutes for König's lemma_](https://members.loria.fr/DLarchey/files/papers/types-post-2024.pdf) 
-by Dominique Larchey-Wendling.
+by Dominique Larchey-Wendling, to be published circa mid july 2025 as LIPIcs volume 336.
 
 The standalone Coq file [`constructive_konig.v`](constructive_konig.v)
 contains the developement and is largely commented. It has minimal dependencies, only on the standard 
