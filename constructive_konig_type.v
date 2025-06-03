@@ -352,6 +352,29 @@ Proof.
   + intros (? & ? & -> & [])%Forall2_cons_left_inv; eauto.
 Qed.
 
+(** Maximum of a list *)
+
+(* Maximum value in a list of natural numbers *)
+Definition list_max := fold_right max 0.
+
+(* list_max and membership *)
+Fact list_max_in n l : n ∈ l → n ≤ list_max l.
+Proof.
+  revert n; apply Forall_forall.
+  induction l as [ | x l IHl ]; simpl; constructor.
+  + lia.
+  + revert IHl; apply Forall_impl; lia.
+Qed.
+
+(* list_max occurs in the list *)
+Fact list_max_find l : l = [] ∨ list_max l ∈ l.
+Proof.
+  induction l as [ | x l [ -> | ] ]; auto; right; simpl.
+  + lia.
+  + destruct (Nat.max_spec_le x (list_max l))
+      as [ (_ & ->) | (_ & ->) ]; auto.
+Qed.
+
 (** The notion of being upward closed for T *)
 
 #[local] Notation upclosed T P := (∀ x y, T x y → P x → P y).
@@ -415,6 +438,67 @@ Section cover_morphism.
   Qed.
 
 End cover_morphism.
+
+Section dependent_choice_sigma.
+
+  (* This is Dependent Choice:
+       any total relation contains a sequence
+       starting at any given point. *)
+
+  Definition DC X :=
+    ∀ R : X → X → Type,
+        (∀x, Σₜ y, R x y) 
+       → ∀x, Σₜ ρ, ρ 0 = x ∧ₜ ∀n, R (ρ n) (ρ (S n)).
+       
+  Theorem DC_Type : ∀X, DC X.
+  Proof.
+    intros X R HR x.
+    set (f x := projT1 (HR x)).
+    assert (Hf : ∀x, R x (f x)).
+    1: intro; apply (projT2 _).
+    exists (@nat_rect _ x (fun _ => f)); split; auto.
+  Qed.
+
+  (* Below is a specialization of Dependent Choice on a Σ-type
+
+     If R is a total relation on {x | Q x} then there is a
+     R-sequence starting from any point in Q. *)
+
+  Definition DC_Σ {X} (Q : X → Type) :=
+    ∀R, (∀x, Q x → Σₜ y, Q y ∧ₜ R x y)
+       → ∀x, Q x → Σₜ ρ, ρ 0 = x ∧ₜ (∀n, Q (ρ n) ∧ₜ R (ρ n) (ρ (S n))).
+
+  Fact DC_sig__DC_Σ X (Q : X → Type) : DC {x & Q x} → DC_Σ Q.
+  Proof.
+    intros dc R HR x Hx.
+    destruct dc
+      with (R := λ u v : sigT Q, R (projT1 u) (projT1 v))
+           (x := existT _ x Hx)
+      as (ρ & H1 & H2).
+    + intros (u & Hu); simpl.
+      destruct (HR _ Hu) as (v & Hv & E).
+      now exists (existT _ v Hv).
+    + exists (fun n => projT1 (ρ n)); repeat split; auto.
+      * now rewrite H1.
+      * apply (projT2 _).
+  Qed.
+
+  Fact DC_Σ__DC X : DC_Σ (λ _ : X, ⊤) → DC X.
+  Proof.
+    intros dc R HR x.
+    destruct (dc R) with x as (ρ & H1 & H2); eauto.
+    + clear x; intros x _; destruct (HR x); eauto.
+    + exists ρ; split; auto; intro; apply H2.
+  Qed.
+
+  Hint Resolve DC_sig__DC_Σ DC_Σ__DC : core.
+
+  (* Dependent Choice and Dependent Choice on Σ-types are equivalent *)
+
+  Corollary DC_iff_DC_Σ : (∀X, DC X) ⇄ₜ ∀ X P, @DC_Σ X P.
+  Proof. split; eauto. Qed.
+
+End dependent_choice_sigma.
 
 Section cover_extra.
 
@@ -486,46 +570,29 @@ Section cover_extra.
 
   Theorem cover_sequences T P x : cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → Σₜ n, P (ρ n).
   Proof. intro; apply cover_neg__cover_seq; unfold cover_neg; now apply cover_negative. Qed.
-
-  Section cover_seq__cover_neg__only_when_Base_is_Type.
   
-    (** When Base is Type, we do not need dependent choice *)
-  
-    Variables (T : X → X → Base) (P : rel₁ X) (x : X) (Hx : ∀ρ, cover_seq T P x ρ)
-              (K : X → Type) (HK1 : K x) (HK2 : ∀y, K y → { z : X & K z * T y z }%type).
+  Section cover_seq__cover_neg_Dependent_Choice.
 
-    Let f : sigT K → sigT K.
+    (* Using D(ependent) C(hoice) on a Σ-type, but w/o excluded middle, one can get
+       the negative characterization of cover T P x from the sequential one. *)
+    Lemma cover_seq__cover_neg_DC T P x : (∀ρ, cover_seq T P x ρ) → ∀Q : X → Type, cover_neg T P x Q.
     Proof.
-      intros (y & hy).
-      destruct (@HK2 _ hy) as (z & H1 & H2).
-      now exists z.
-    Defined.
- 
-    Local Fact f_T y : T (projT1 y) (projT1 (f y)).
-    Proof.
-      unfold f; destruct y as (y & hy).
-      now destruct (@HK2 _ hy) as (? & []).
+      generalize (fst DC_iff_DC_Σ DC_Type); intros dc.
+      intros H Q Hx HQ.
+      destruct (dc _ _ _ HQ _ Hx)
+        as (rho & H1 & H2).
+      destruct (H _ H1) as (n & Hn); eauto.
+      + intro; apply H2.
+      + exists (rho n); split; auto; apply H2.
     Qed.
 
-    Let rho := @nat_rect (fun _ => sigT K) (existT _ x HK1) (fun _ => f).
-    Let ρ n := projT1 (rho n).
-    
-    Lemma cover_seq__cover_neg__Base_is_Type : { y : X & P y * K y }%type.
-    Proof.
-      destruct (Hx ρ) as (n & Hn).
-      + reflexivity.
-      + intro; apply f_T.
-      + exists (ρ n); split; auto.
-        apply (projT2 _).
-    Qed.
+  End cover_seq__cover_neg_Dependent_Choice.
 
-  End cover_seq__cover_neg__only_when_Base_is_Type.
-  
   Theorem cover_neg_iff_cover_seq__Base_is_Type T P x : (∀K, cover_neg T P x K) ⇄ₜ ∀ρ, cover_seq T P x ρ.
   Proof.
     split.
     + apply cover_neg__cover_seq.
-    + exact (@cover_seq__cover_neg__Base_is_Type T P x).
+    + exact (@cover_seq__cover_neg_DC T P x).
   Qed.
 
 End cover_extra.
@@ -1026,6 +1093,457 @@ Proof.
   intros lc Hlc; apply Forall_forall.
   now intros ? ?%Hlfan%Hlc.
 Qed.
+
+(** list branching finite trees, ie trees nested with lists *)
+
+Unset Elimination Schemes.
+Inductive tree X : Type :=
+  | node : X → list (tree X) → tree X.
+Set Elimination Schemes.
+
+Arguments node {_}.
+
+#[local] Notation "⟨ x | l ⟩" := (node x l) (at level 0, format "⟨ x | l ⟩").
+
+Fact tree_ind X (P : tree X → Prop) :
+    (∀ x l, (∀ t, t ∈ l → P t) → P ⟨x|l⟩) → ∀t, P t.
+Proof.
+  intros HP.
+  refine (fix tree_ind t := _).
+  destruct t as [ x l ].
+  apply HP.
+  intro t.
+  induction l as [ | r l IH ].
+  + intros [].
+  + intros [ <- | ].
+    * apply tree_ind.
+    * now apply IH.
+Qed.
+
+Section tree_extra.
+
+  Variables X : Type.
+
+  Implicit Type (x : X) (t : tree X).
+
+  Definition root t := match t with ⟨x|_⟩ => x end.
+  Definition sons t := match t with ⟨_|l⟩ => l end.
+
+  Fixpoint tree_ht t := 1+list_max (map tree_ht (sons t)).
+
+  Fact tree_ht_fix x l : tree_ht ⟨x|l⟩ = 1+list_max (map tree_ht l).
+  Proof. reflexivity. Qed.
+
+  Inductive branch : tree X → list X → X → Prop :=
+    | branch_void x l :          branch ⟨x|l⟩ [] x
+    | branch_cons x l y m p z :  ⟨y|m⟩ ∈ l
+                               → branch ⟨y|m⟩ p z
+                               → branch ⟨x|l⟩ (y::p) z.
+
+  Hint Constructors branch : core.
+
+  Fact branch_inv t p z :
+       branch t p z
+     → match p with
+       | []   => root t = z
+       | y::p => ∃s, s ∈ sons t ∧ root s = y ∧ branch s p z
+       end.
+  Proof. destruct 1; eauto. Qed.
+
+  Fact branch_nil_inv t z : branch t [] z ↔ root t = z.
+  Proof.
+    split.
+    + apply branch_inv.
+    + intros <-; destruct t; auto.
+  Qed.
+
+  Fact branch_cons_inv t y p z :
+      branch t (y::p) z ↔ ∃s, s ∈ sons t ∧ root s = y ∧ branch s p z.
+  Proof.
+    split.
+    + apply branch_inv.
+    + destruct t; simpl; intros ([] & ? & <- & ?); eauto.
+  Qed.
+
+  Fact branch_length_tree_ht t p z : branch t p z → ⌊p⌋ < tree_ht t.
+  Proof.
+    induction 1 as [ | ? ? ? ? ? ? ? ? IH ]; simpl; [ lia | ].
+    rewrite <- Nat.succ_lt_mono.
+    apply Nat.lt_le_trans with (1 := IH),
+          list_max_in,
+          in_map_iff; eauto.
+  Qed.
+
+End tree_extra.
+
+Arguments root {_}.
+Arguments sons {_}.
+Arguments tree_ht {_}.
+Arguments branch {_}.
+
+#[local] Hint Constructors branch : core.
+
+(** Paths in a graph represented by a binary relation *)
+
+Section path.
+
+  Variable (X : Type).
+
+  Implicit Type (T : rel₂ X) (P : rel₁ X) (x : X).
+
+  (* Path in a graph (binary relation): path x p y means that
+     p is the list of visited vertices after x and up to y *)
+  Inductive path T : X → list X → X → Prop :=
+    | path_void x :       path T x [] x
+    | path_cons x y p z : T x y
+                        → path T y p z
+                        → path T x (y::p) z.
+
+  Hint Constructors path : core.
+
+  Fact path_inv T x p z :
+       path T x p z
+     → match p with
+       | []   => x = z
+       | y::p => T x y ∧ path T y p z
+       end.
+  Proof. destruct 1; eauto. Qed.
+
+  Fact path_app T x p y q z : path T x p y → path T y q z → path T x (p++q) z.
+  Proof. induction 1; simpl; eauto. Qed.
+
+  Fact path_app_inv T x p q z : path T x (p++q) z → ∃y, path T x p y ∧ path T y q z.
+  Proof.
+    induction p as [ | ? ? IH ] in x |- *; simpl; eauto.
+    intros (? & (? & [])%IH)%path_inv; eauto.
+  Qed.
+
+  Fact path_nil_inv T x y : path T x [] y ↔ x = y.
+  Proof.
+    split.
+    + apply path_inv.
+    + intros ->; eauto.
+  Qed.
+
+  Fact path_cons_inv T x y p z : path T x (y::p) z ↔ T x y ∧ path T y p z.
+  Proof.
+    split.
+    + apply path_inv.
+    + intros []; eauto.
+  Qed.
+
+  Hint Resolve path_app : core.
+
+  Fact path_snoc_inv T x p a z : path T x (p++[a]) z ↔ ∃y, path T x p y ∧ T y z ∧ a = z.
+  Proof. 
+    split.
+    + intros (? & ? & (? & ->%path_inv)%path_inv)%path_app_inv; eauto. 
+    + intros (? & ? & ? & ->); eauto.
+  Qed.
+
+  Fact upclosed_path T P : upclosed T P → upclosed (λ x y, ∃p, path T x p y) P.
+  Proof. intros ? ? ? (? & H); induction H; eauto. Qed.
+
+  Section path_monotone.
+
+    Variables (T : rel₂ X)
+              (Q : list X → X → Prop)
+              (HQ : ∀ p x y, T x y → Q p x → Q (p++[y]) y).
+
+    Fact path_monotone p q x y : path T x q y → Q p x → Q (p++q) y.
+    Proof.
+      induction q as [ | ] using rev_ind in y |- *.
+      + rewrite app_nil_r; now intros <-%path_inv.
+      + intros (? & ? & ? & ->)%path_snoc_inv ?.
+        rewrite app_assoc; eauto.
+    Qed.
+
+  End path_monotone.
+
+End path.
+
+Arguments path {_}.
+
+#[local] Hint Constructors path : core.
+
+Section representation_of_relations_by_trees.
+
+  (** When the length of paths is bounded,
+      the paths from x of a finitary relation
+      are representable by the branches
+      of tree rooted with x. *)
+
+  Variables (X : Type).
+
+  Implicit Type (T : rel₂ X) (x : X).
+
+  (* The notion of representation that comes to mind first. *)
+  Definition strongly_represents T P x t :=
+      root t = x
+    ∧ ∀ p y, branch t p y ↔ path T x p y ∧ P p y.
+
+  (** So we favor this definition for representation
+      of the relation T at root x by a tree, on the
+      paths that satisfy P. 
+
+      This means that t may contain branches that
+      do not satisfy P. *)
+  Definition represents T P x t :=
+      root t = x
+    ∧ ∀ p y, P p y → (branch t p y ↔ path T x p y ).
+
+  (* A strong representation is a representation *)
+  Fact strongly_represents__represents T P x :
+      strongly_represents T P x ⊆₁ represents T P x.
+  Proof. 
+    intros ? (? & H); split; auto.
+    intros ? ? ?; rewrite H; tauto.
+  Qed.
+
+  Variables (T : rel₂ X) (Tfin : ∀x, finite (T x)).
+
+  (** length bounded path can be strongly represented
+      because this is a (weakly) decidable predicate *)
+  Theorem bounded_length_strongly_represented n x :
+       Σₜ t, strongly_represents T (λ p _, ⌊p⌋ ≤ n) x t.
+  Proof.
+    induction n as [ | n IHn ] in x |- *.
+    + exists ⟨x|[]⟩; split; simpl; auto.
+      intros p y; split.
+      * destruct p; intros H%branch_inv; subst; simpl; auto.
+        destruct H as (_ & [] & _).
+      * destruct p; intros (?%path_inv & ?); simpl in *; subst; auto; lia.
+    + destruct (Tfin x) as [ lx Hlx ].
+      set (R x t := strongly_represents T (λ p _, ⌊p⌋ ≤ n) x t).
+      destruct (forall_ex_Forall2_Base R lx) as (lt & Hlt); eauto.
+      exists ⟨x|lt⟩; split; auto.
+      intros [ | y l ] z; split.
+      * intros <-%branch_inv; simpl; split; auto; lia.
+      * intros (<-%path_inv & _); auto.
+      * intros (s & Hs & <- & H2)%branch_inv; simpl in Hs |- *.
+        destruct (Forall2_in_right_inv Hlt Hs) as (y & H3 & <- & H4).
+        apply H4 in H2 as [].
+        split; try lia.
+        constructor 2; auto.
+        now apply Hlx.
+      * simpl; intros ((H1%Hlx & H2)%path_inv & H3).
+        destruct (Forall2_in_left_inv Hlt H1) as ([y' m] & ? & ? & G); subst; simpl; eauto.
+        constructor 2 with m; auto.
+        apply G; split; auto; lia.
+  Qed.
+
+  (** (T,P,x) is represented iff T-paths from x that satisfy P have
+      a (globally) bounded length *)
+  Theorem finitary_represented_iff_bounded P x :
+       (Σₜ t, represents T P x t)
+    ⇄ₜ (Σₜ n, ∀ p y, path T x p y → P p y → ⌊p⌋ < n).
+  Proof.
+    split.
+    + intros (t & <- & Ht).
+      exists (tree_ht t).
+      intros p y H1 H2.
+      apply Ht in H1; auto.
+      revert H1; apply branch_length_tree_ht.
+    + intros (n & Hn).
+      destruct (bounded_length_strongly_represented n x)
+        as (t & <- & Ht).
+      exists t; split; auto.
+      intros p y Hp; split.
+      * now intros []%Ht.
+      * intros ?; apply Ht; split; auto.
+        eapply Hn in H; eauto; lia.
+  Qed.
+
+  Variables (x : X) (P : list X → X → Prop)
+            (HP1 : ∀ p y z, T y z → P p y → P (p++[z]) z)
+            (n : nat) (Hn : ∀ p y, path T x p y → n = ⌊p⌋ → P p y).
+
+  Local Lemma paths_outside_circle p y : path T x p y → n ≤ ⌊p⌋ → P p y.
+  Proof.
+    intros H2 H3.
+    destruct list_length_split
+      with (m := p) (a := n) (b := ⌊p⌋-n)
+      as (l & r & -> & H4 & H5); [ lia | clear H3 H5 ].
+    apply path_app_inv in H2 as (z & H6 & H7).
+    apply path_monotone with (2 := H7); eauto.
+  Qed.
+
+  Hint Resolve paths_outside_circle : core.
+
+  Lemma short_paths p y : path T x p y → ¬ P p y → ⌊p⌋ < n.
+  Proof.
+    intros H1 H2.
+    destruct (le_lt_dec n ⌊p⌋); auto.
+    destruct H2; eauto.
+  Qed.
+
+End representation_of_relations_by_trees.
+
+Arguments represents {X}.
+
+Section konig_cover.
+
+  Variables (X : Type)
+            (T : rel₂ X) (Tfin : ∀x, finite (T x)) 
+            (P : rel₁ X) (Pupc : upclosed T P) 
+            (x : X) (Hx : cover T P x).
+
+  Local Definition next y := projT1 (Tfin y).
+  
+  Local Fact next_spec y z : T y z ↔ z ∈ next y.
+  Proof. apply (projT2 (Tfin y)). Qed.
+
+  Local Definition circle : nat → list X := nat_rect _ [x] (λ _, flat_map next).
+  
+  Local Fact path_to_circle p y : path T x p y → y ∈ circle ⌊p⌋.
+  Proof.
+    induction p as [ | u p IH] in y |- * using rev_ind.
+    + intros []%path_inv; simpl; auto.
+    + intros (v & ? & ?%next_spec & ->)%path_snoc_inv; simpl; auto.
+      rewrite length_app, Nat.add_comm; simpl.
+      apply in_flat_map; eauto.
+  Qed.
+
+  (* There is a circle in P *)
+  Local Lemma P_contains_some_circle : Σₜ n, ⋀₁P (circle n).
+  Proof.
+    apply cover_sequences with (x := [x]) (T := T†) (P := ⋀₁P); auto.
+    + apply FAN_cover; auto.
+    + intros ? ? (? & ? & ?%inhabits%In_iff_inhabited_In_Base%next_spec)%In_Base_flat_map_iff; eauto.
+  Qed.
+
+  (* As a consequence, the paths which do not end in P are those of a finite tree *)
+  Theorem konig_cover : Σₜ t, represents T (λ _ y, ¬ P y) x t.
+  Proof.
+    apply finitary_represented_iff_bounded; auto.
+    destruct P_contains_some_circle as (n & Hn).
+    rewrite Forall_forall in Hn.
+    exists n.
+    apply short_paths; auto.
+    intros p ? ? ?; apply Hn; subst; now apply path_to_circle.
+  Qed.
+
+End konig_cover.
+
+Check konig_cover.
+
+(** The finitary version of König's lemma w/o XM or choice 
+    see https://fr.wikipedia.org/wiki/Lemme_de_K%C3%B6nig
+    and https://books.google.fr/books?id=N7BvXVUCQk8C&printsec=frontcover&redir_esc=y#v=onepage&q&f=false *)
+
+(*
+Section acc_rel.
+
+  Variables (X : Type)
+            (T : rel₂ X) (Tfin : ∀x, finite (T x))
+            (x : X) (Hx : acc T x).
+
+  Theorem konig_acc : ∃t, root t = x ∧ ∀ p y, branch t p y ↔ path T x p y .
+  Proof.
+    destruct konig_cover
+      with (1 := Tfin) (P := λ _ : X, ⊥) (x := x)
+      as (? & []); eauto.
+    now apply acc_iff_cover_empty in Hx.
+  Qed.
+
+End acc_rel.
+
+Check konig_acc.
+*)
+
+Section konig_bar.
+
+  Variables (X : Type)
+            (T : rel₂ X) (Tfin : ∀x, finite (T x))
+            (P : rel₁ (list X)) (Pmono : monotone P)
+            (HP : bar P []).
+
+  (* The circle of center x and of radius n is contained in a list *)
+  Local Fact circle_bounded n x : Σₜ lp, ∀p y, path T x p y → ⌊p⌋ = n → y ∈ lp.
+  Proof.
+    exists (circle T Tfin x n).
+    intros; subst; now apply path_to_circle.
+  Qed.
+  
+  (*
+
+  (* Q x lc if every path from the center x to a point on the circle
+     of radius ⌊lc⌋ is a choice list for lc, ie FAN lc includes all the
+     paths from x of length ⌊lc⌋. *)
+  Let Q x lc := ∀ p y, path T x p y → ⌊p⌋ = ⌊lc⌋ → FAN lc (rev p).
+
+  (* There is a choice list of P-accepted paths (read reversed) which
+     includes all the paths from x of that given length.
+     We use bar_negative here !! *)
+  Local Lemma choice_list_in_P_meets_Q x : ∃lc, FAN lc ⊆₁ P ∧ Q x lc.
+  Proof.
+     destruct (bar_sequences (FAN_bar Pmono HP)) with (α := circle _ Tfin x).
+    apply bar_negative with (Q := Q x).
+    + now apply FAN_bar.
+    + now intros []; simpl; auto.
+    + intros lc Hlc.
+      destruct (circle_bounded (1+⌊lc⌋) x) as (l & Hl).
+      exists l; intros p.
+      destruct p as [ | z p _ ] using rev_ind; try easy.
+      rewrite app_length; simpl.
+      intros y (u & ? & ? & ->)%path_snoc_inv E.
+      rewrite rev_app_distr; simpl; constructor.
+      * apply Hl with (p++[y]); auto.
+        - apply path_app with u; eauto.
+        - now rewrite app_length.
+      * red in Hlc; eapply Hlc; eauto; lia.
+  Qed.
+  
+  *)
+  
+  Goal path (fun x y => y = S x) 0 [1;2;3] 3.
+  Proof. repeat (constructor 2; eauto). Qed.
+
+  (* P contains all the paths from x to points on a circle *)
+  Local Corollary P_contains_some_disk x : Σₜ n, ∀p y, path T x p y → n = ⌊p⌋ → P (rev p).
+  Proof.
+    destruct (bar_sequences (FAN_bar Pmono HP))
+      with (α := circle _ Tfin x)
+      as (n & Hn).
+    exists n.
+    intros p y Hp H.
+    apply Hn.
+    subst n.
+    rewrite Forall2_rev_iff, rev_involutive.
+    revert Hp; clear Hn.
+    induction p as [ | u p IH] in y |- * using rev_ind.
+    + intros <-%path_inv; simpl; auto.
+    + intros (v & H1 & H2 & ->)%path_snoc_inv.
+      rewrite app_length, Nat.add_comm; simpl plus.
+      rewrite pfx_fix; simpl.
+      apply Forall2_app; eauto.
+      constructor; auto.
+      
+      apply 
+      apply path_to_circle.
+      
+    induction 1.
+    Search Forall2 rev.
+    
+    destruct (choice_list_in_P_meets_Q x) as (lc & H & ?).
+    exists ⌊lc⌋.
+    intros ? ? ? ?; apply H; eauto.
+  Qed.
+
+  (* Hence, only short paths can satisfy ¬ P *)
+  Theorem konig_bar x : ∃t, represents T (λ p _, ¬ P (rev p)) x t.
+  Proof.
+    apply finitary_represented_iff_bounded; auto.
+    destruct (P_contains_some_disk x) as (n & Hn).
+    exists n.
+    apply short_paths; auto.
+    intros; rewrite rev_app_distr; simpl; auto.
+  Qed.
+
+End konig_bar.
+
+Check konig_bar.
+
 
 (** Conclude with almost full relations and irredundant sequences *)
 
