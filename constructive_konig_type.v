@@ -7,67 +7,94 @@
 (*        Mozilla Public License Version 2.0, MPL-2.0         *)
 (**************************************************************)
 
-(** This is the Type-bounded version of the cover, bar and af predicates
-    that carry computational information for the computation of
-    the FAN functional. 
-    
+(** This is the Type-bounded version of the cover, bar and af 
+    predicates that carry effective information for the 
+    computation of FAN functionals, see below.
+
     We get the following types for cover, bar and af:
-    
+
        cover {X} (T : X → X → Type) (P : X → Prop) (x : X) : Type
        bar {X} (P : list X → Prop) (l : list X) : Type
        af {X} (R : X → X → Prop) : Type
-    
-    The sequential interpretation now look like:
-    
-     cover_sequences: cover T P x → ∀ρ, ρ 0 = x → (∀n, T (ρ n) (ρ (1+n))) → { n | P ρₙ }.
-     bar_sequences: bar P [] → ∀α, { n | P [αₙ₋₁;...;α₀] }.
-     af_sequences: af R → ∀α, { n | ∃ i j, i < j < n ∧ R αᵢ αⱼ }
-     
-    and we see the output of the FAN functional as { n | property of n } 
-    
+
+    Notice that to be able to better compare the results with 
+    Prop-bounded versions, with choose the following notations for 
+    Type-bounded connectives:
+
+        Type             is denoted  Base
+        Emtpy_set        is denoted  ⊥ₜ
+        A + B            is denoted  A ∨ₜ B
+        A * B            is denoted  A ∧ₜ B
+        { x : X & A x }  is denoted  Σₜ x, A x
+
+    Notice that not all Prop based connectives are systematically
+    converted to Type in the process; and conversely, some Type-bounded 
+    lemmas already appear in the Prop-based developement. Hence the choice 
+    to use "Base" as a way to outline the points in the code where the 
+    conversion occurs, making the code somewhat generic in the choice
+    Base := Prop or Base := Type. See eg the project
+
+    https://github.com/DmxLarchey/Quasi-Morphisms/blob/main/af_morphism.v
+
+    for more information about this generic handling of the choice
+    between Prop-based and Type-based developements. Alternatively,
+    (for the motivated reader) the whole Coq-Kruskal project is 
+    Base-bounded, hence generic in the Prop vs Type choice
+
+    https://github.com/DmxLarchey/Coq-Kruskal
+
+    Back to the FAN theorem and Konig's lemma, the sequential interpretations 
+    now look like:
+
+       cover_sequences: cover T P x → ∀ρ, ρ₀ = x → (∀n, T ρₙ ρ₁₊ₙ) → Σₜ n, P ρₙ
+       acc_sequences: acc R x → ∀ρ, ρ₀ = x → (∀n, T ρₙ ρ₁₊ₙ) → ⊥
+       bar_sequences: bar P [] → ∀α, Σₜ n, P [αₙ₋₁;...;α₀]
+       af_sequences: af R → ∀α, Σₜ n, ∃ i j, i < j < n ∧ R αᵢ αⱼ
+
+    and we see the output of the FAN functional as "Σₜ n, property of n" 
+
     The FAN for cover has exactly the same shape
-    
+
      FAN_cover x : cover T P x → cover T† ⋀₁P [x]
-     
+
     but the finitary image T† now has type T† : list X → list X → Type,
     as it records the position of images in the image list:
-    
-        T† l m := ∀y, y ∈ₜ m → { x : X & x ∈ₜ l ∧ₜ T x y }
-    
-    where y ∈ₜ m is the type of occurences of y in m. So T† l m
-    read as the type of maps from occurences in m to a T related
-    occurences in l.
 
-    The needed conversions:
+        T† l m := ∀y, y ∈ₜ m → Σₜ x, x ∈ₜ l ∧ₜ T x y
+
+    where y ∈ₜ m is the type of "occurences of y" in m. So T† l m
+    reads as the type of maps from occurences in m to some T related
+    occurence in l.
+
+    Summary needed conversions:
     - the list membership predicate denoted x ∈ l below
       now has a Type-bounded counterpart denoted x ∈ₜ l
-      which contain not only the information of membership
+      which contains not only the information of membership
       but also of "position" of x in l, hence x ∈ₜ l is the
       type of occurrences of x in l;
     - the permutatibility predicate denoted l ~ₚ m is converted
       into the type of permutations l ~ₜ m;
     - a small part of the List module and Permutation module
-      most be lifted to Type-bounded as well. Notice that
+      must be lifted to Type-bounded as well. Notice that
       we need both verions of ∈ and ∈ₜ, but only Type-bounded
-      permutations; 
-    - of course cover and bar (we skip acc/Acc/founded here)
+      permutations;
+    - of course cover and bar
+    - notice that the Prop-bounded and Type-bounded versions
+      of the acc predicates are isomorphic because acc is
+      a so called "singleton" predicate
     - interesting is the DC (dependent choice) is provable
       into Type (not in Prop) hence the sequential and the
       negative characterizations are equivalent for the
-      Type-bounded versions.
+      Type-bounded versions
     - we do not study the role played by strong XM 
       ie (∀P : Type, P + (P → False)) because we think
       such an axiom is way too strong anyway !!
     - incl and fimage need to be lifted to Type
-    
-    - We obtain the FAN theorem for Type-bounded covers,
+    - we obtain the FAN theorem for Type-bounded covers,
       for Type-bounded bars (incl Fridlender's formulation)
       and König's lemma for Type-bounded AF relations
     - These allow the computation of the FAN functional,
       eg the bound in the length of the branches of tree.
-      
-    - we do not adapt the part related to the representation
-      of trees but this should not pose any difficulty.
 *) 
 
 From Coq Require Import List Arith Lia Utf8.
@@ -596,6 +623,22 @@ Section cover_extra.
   Qed.
 
 End cover_extra.
+
+Inductive acc {X} (R : rel₂ X) x : Prop :=
+  | acc_intro : (∀y, R x y → acc R y) → acc R x.
+
+Fact acc_iff_cover_empty X R (x : X) : acc R x ⇄ₜ cover R (λ _, ⊥) x.
+Proof.
+  split.
+  + induction 1; now constructor 2.
+  + induction 1 as [ _ [] | ]; now constructor.
+Qed.
+
+Fact acc_sequences X R (x : X) : acc R x → ∀ρ, ρ 0 = x → (∀n, R (ρ n) (ρ (1+n))) → ⊥.
+Proof.
+  intros H%acc_iff_cover_empty rho H1 H2.
+  destruct cover_sequences with (1 := H) (ρ := rho); auto.
+Qed.
 
 (** Finitary lifting of a binary relation to lists *)
 
@@ -1449,14 +1492,13 @@ Check konig_cover.
     see https://fr.wikipedia.org/wiki/Lemme_de_K%C3%B6nig
     and https://books.google.fr/books?id=N7BvXVUCQk8C&printsec=frontcover&redir_esc=y#v=onepage&q&f=false *)
 
-(*
-Section acc_rel.
+Section konig_acc.
 
   Variables (X : Type)
             (T : rel₂ X) (Tfin : ∀x, finite (T x))
             (x : X) (Hx : acc T x).
 
-  Theorem konig_acc : ∃t, root t = x ∧ ∀ p y, branch t p y ↔ path T x p y .
+  Theorem konig_acc : Σₜ t, root t = x ∧ ∀ p y, branch t p y ↔ path T x p y .
   Proof.
     destruct konig_cover
       with (1 := Tfin) (P := λ _ : X, ⊥) (x := x)
@@ -1464,10 +1506,9 @@ Section acc_rel.
     now apply acc_iff_cover_empty in Hx.
   Qed.
 
-End acc_rel.
+End konig_acc.
 
 Check konig_acc.
-*)
 
 Section konig_bar.
 
@@ -1663,7 +1704,7 @@ Section choice_list.
     rewrite IHl; tauto.
   Qed.
 
-  Fact choice_list_snoc P l x :  choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
+  Fact choice_list_snoc P l x : choice_list P (l++[x]) ↔ choice_list P l ∧ P ⌊l⌋ x.
   Proof.
     rewrite choice_list_app; simpl.
     rewrite Nat.add_0_r; tauto.
