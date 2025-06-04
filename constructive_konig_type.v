@@ -1381,6 +1381,9 @@ End representation_of_relations_by_trees.
 
 Arguments represents {X}.
 
+Fact rev_fix A (a : A) l : rev (a::l) = rev l ++ [a].
+Proof. reflexivity. Qed.
+
 Section konig_cover.
 
   Variables (X : Type)
@@ -1389,12 +1392,12 @@ Section konig_cover.
             (x : X) (Hx : cover T P x).
 
   Local Definition next y := projT1 (Tfin y).
-  
+
   Local Fact next_spec y z : T y z ↔ z ∈ next y.
   Proof. apply (projT2 (Tfin y)). Qed.
 
   Local Definition circle : nat → list X := nat_rect _ [x] (λ _, flat_map next).
-  
+
   Local Fact path_to_circle p y : path T x p y → y ∈ circle ⌊p⌋.
   Proof.
     induction p as [ | u p IH] in y |- * using rev_ind.
@@ -1402,6 +1405,21 @@ Section konig_cover.
     + intros (v & ? & ?%next_spec & ->)%path_snoc_inv; simpl; auto.
       rewrite length_app, Nat.add_comm; simpl.
       apply in_flat_map; eauto.
+  Qed.
+
+  Hint Resolve path_to_circle path_app : core.
+
+  Local Fact path__FAN_circle p y : path T x p y → FAN (rev (pfx (λ n, circle (S n)) ⌊p⌋)) p.
+  Proof.
+    induction p as [ | u p IH] in y |- * using rev_ind.
+    + intros <-%path_inv; simpl; auto.
+    + intros (v & H1 & H2 & ->)%path_snoc_inv.
+      rewrite app_length, Nat.add_comm; simpl plus.
+      rewrite pfx_fix, rev_fix.
+      apply Forall2_app; eauto.
+      constructor; auto.
+      replace (S ⌊p⌋) with ⌊p++[y]⌋; eauto.
+      rewrite app_length; simpl; lia.
   Qed.
 
   (* There is a circle in P *)
@@ -1458,80 +1476,22 @@ Section konig_bar.
             (P : rel₁ (list X)) (Pmono : monotone P)
             (HP : bar P []).
 
-  (* The circle of center x and of radius n is contained in a list *)
-  Local Fact circle_bounded n x : Σₜ lp, ∀p y, path T x p y → ⌊p⌋ = n → y ∈ lp.
-  Proof.
-    exists (circle T Tfin x n).
-    intros; subst; now apply path_to_circle.
-  Qed.
-  
-  (*
-
-  (* Q x lc if every path from the center x to a point on the circle
-     of radius ⌊lc⌋ is a choice list for lc, ie FAN lc includes all the
-     paths from x of length ⌊lc⌋. *)
-  Let Q x lc := ∀ p y, path T x p y → ⌊p⌋ = ⌊lc⌋ → FAN lc (rev p).
-
-  (* There is a choice list of P-accepted paths (read reversed) which
-     includes all the paths from x of that given length.
-     We use bar_negative here !! *)
-  Local Lemma choice_list_in_P_meets_Q x : ∃lc, FAN lc ⊆₁ P ∧ Q x lc.
-  Proof.
-     destruct (bar_sequences (FAN_bar Pmono HP)) with (α := circle _ Tfin x).
-    apply bar_negative with (Q := Q x).
-    + now apply FAN_bar.
-    + now intros []; simpl; auto.
-    + intros lc Hlc.
-      destruct (circle_bounded (1+⌊lc⌋) x) as (l & Hl).
-      exists l; intros p.
-      destruct p as [ | z p _ ] using rev_ind; try easy.
-      rewrite app_length; simpl.
-      intros y (u & ? & ? & ->)%path_snoc_inv E.
-      rewrite rev_app_distr; simpl; constructor.
-      * apply Hl with (p++[y]); auto.
-        - apply path_app with u; eauto.
-        - now rewrite app_length.
-      * red in Hlc; eapply Hlc; eauto; lia.
-  Qed.
-  
-  *)
-  
-  Goal path (fun x y => y = S x) 0 [1;2;3] 3.
-  Proof. repeat (constructor 2; eauto). Qed.
-
-  (* P contains all the paths from x to points on a circle *)
-  Local Corollary P_contains_some_disk x : Σₜ n, ∀p y, path T x p y → n = ⌊p⌋ → P (rev p).
+  (* P contains all the paths from x to points on some circle *)
+  Local Lemma P_contains_some_disk x : Σₜ n, ∀p y, path T x p y → n = ⌊p⌋ → P (rev p).
   Proof.
     destruct (bar_sequences (FAN_bar Pmono HP))
-      with (α := circle _ Tfin x)
+      with (α := fun n => circle _ Tfin x (S n))
       as (n & Hn).
     exists n.
     intros p y Hp H.
     apply Hn.
     subst n.
     rewrite Forall2_rev_iff, rev_involutive.
-    revert Hp; clear Hn.
-    induction p as [ | u p IH] in y |- * using rev_ind.
-    + intros <-%path_inv; simpl; auto.
-    + intros (v & H1 & H2 & ->)%path_snoc_inv.
-      rewrite app_length, Nat.add_comm; simpl plus.
-      rewrite pfx_fix; simpl.
-      apply Forall2_app; eauto.
-      constructor; auto.
-      
-      apply 
-      apply path_to_circle.
-      
-    induction 1.
-    Search Forall2 rev.
-    
-    destruct (choice_list_in_P_meets_Q x) as (lc & H & ?).
-    exists ⌊lc⌋.
-    intros ? ? ? ?; apply H; eauto.
+    revert Hp; apply path__FAN_circle.
   Qed.
 
   (* Hence, only short paths can satisfy ¬ P *)
-  Theorem konig_bar x : ∃t, represents T (λ p _, ¬ P (rev p)) x t.
+  Theorem konig_bar x : Σₜ t, represents T (λ p _, ¬ P (rev p)) x t.
   Proof.
     apply finitary_represented_iff_bounded; auto.
     destruct (P_contains_some_disk x) as (n & Hn).
@@ -1543,7 +1503,6 @@ Section konig_bar.
 End konig_bar.
 
 Check konig_bar.
-
 
 (** Conclude with almost full relations and irredundant sequences *)
 
