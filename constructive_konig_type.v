@@ -476,19 +476,27 @@ Section dependent_choice_sigma.
     ∀ R : X → X → Type,
         (∀x, Σₜ y, R x y) 
        → ∀x, Σₜ ρ, ρ 0 = x ∧ₜ ∀n, R (ρ n) (ρ (S n)).
-       
+
+  (* Type-bounded DC is *provable*, contrary to 
+     Prop-bounded DC, precisely because Σₜ in
+     
+            Σₜ y, R x y   (see def. of DC X above)
+
+     carries computational information, hence
+     can be turned into a function that we
+     iterate over using the nat recursor. *) 
   Theorem DC_Type : ∀X, DC X.
   Proof.
     intros X R HR x.
     set (f x := projT1 (HR x)).
-    assert (Hf : ∀x, R x (f x)).
-    1: intro; apply (projT2 _).
-    exists (@nat_rect _ x (fun _ => f)); split; auto.
+    assert (∀x, R x (f x)).
+    + intro; apply (projT2 _).
+    + exists (nat_rect _ x (λ  _, f)); auto.
   Qed.
 
   (* Below is a specialization of Dependent Choice on a Σ-type
 
-     If R is a total relation on {x | Q x} then there is a
+     If R is a total relation on Σₜ x, Q x then there is a
      R-sequence starting from any point in Q. *)
 
   Definition DC_Σ {X} (Q : X → Type) :=
