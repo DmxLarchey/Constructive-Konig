@@ -1,0 +1,44 @@
+{
+    "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+    "type": "SoftwareSourceCode",
+    "author": [
+        {
+            "id": "https://orcid.org/0000-0001-9860-7203",
+            "type": "Person",
+            "affiliation": {
+                "type": "Organization",
+                "name": "Departement of Formal Method, TYPES team, LORIA, CNRS"
+            },
+            "email": "dominique.larchey-wendling@loria.fr",
+            "familyName": "Larchey-Wendling",
+            "givenName": "Dominique"
+        }
+    ],
+    "codeRepository": "https://github.com/DmxLarchey/Constructive-Konig",
+    "dateCreated": "2024-11-28",
+    "datePublished": "2024-12-04",
+    "description": "This project is composed of the Coq artifact for the TYPES 2024 post-proceedings paper \"Constructive substitutes for König's lemma\" by Dominique Larchey-Wendling, to be published circa mid july 2025 as LIPIcs volume 336.",
+    "funder": {
+        "type": "Organization",
+        "name": "CNRS"
+    },
+    "keywords": [
+        "Kőnig’s lemma",
+        "FAN theorem",
+        "constructive mathematics",
+        "inductive covers",
+        "inductive bars",
+        "almost full relations",
+        "inductive type theory",
+        "Coq"
+    ],
+    "license": "https://spdx.org/licenses/MPL-2.0",
+    "name": "Constructive substitutes for König's lemma (artifact)",
+    "operatingSystem": [
+        "Linux",
+        "MacOS"
+    ],
+    "programmingLanguage": "Coq/Rocq",
+    "softwareRequirements": "https://github.com/rocq-prover",
+    "developmentStatus": "active"
+}
